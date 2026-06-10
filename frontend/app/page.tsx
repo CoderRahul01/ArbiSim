@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 interface SimFlag {
   key: string;
@@ -169,9 +170,7 @@ export default function HomePage() {
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/60 bg-base/90 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-gradient-to-br from-coral to-amber flex items-center justify-center">
-              <span className="text-white text-xs font-bold">A</span>
-            </div>
+            <Image src="/logo.png" alt="ArbiSim Guard" width={28} height={28} className="rounded-md" />
             <span className="font-semibold text-text-primary">ArbiSim Guard</span>
             <span className="ml-1 text-xs font-mono text-text-tertiary border border-border rounded px-1.5 py-0.5">beta</span>
           </div>
@@ -398,7 +397,7 @@ preflight_simulate({
       <footer className="border-t border-border py-8">
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-text-tertiary">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded bg-gradient-to-br from-coral to-amber" />
+            <Image src="/logo.png" alt="ArbiSim Guard" width={20} height={20} className="rounded" />
             <span>ArbiSim Guard</span>
             <span>·</span>
             <span>Built on Arbitrum</span>

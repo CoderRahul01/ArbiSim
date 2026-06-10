@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
@@ -73,9 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Logo */}
         <div className="h-14 flex items-center px-5 border-b border-border shrink-0">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-coral to-amber flex items-center justify-center shrink-0 shadow-sm shadow-coral/30">
-              <span className="text-white text-[10px] font-bold tracking-tight">A</span>
-            </div>
+            <Image src="/logo.png" alt="ArbiSim Guard" width={24} height={24} className="rounded-md shrink-0 shadow-sm shadow-coral/30" />
             <span className="font-semibold text-text-primary text-sm">ArbiSim Guard</span>
           </Link>
         </div>

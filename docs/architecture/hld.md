@@ -180,3 +180,17 @@ flowchart TB
 - **No multi-chain.** Arbitrum One first; Stylus and Arbitrum Sepolia follow.
 - **No persistent mempool / indexer.** Trace analysis is per-job.
 - **No on-chain contract.** The "guard" is a software layer over Anvil forks; there is no ArbiSim contract at this stage.
+
+---
+
+## 8. Mathematical Precision & Models
+
+The simulation math is validated against primary Arbitrum and EVM sources with explicit precision flags:
+
+### Arbitrum Nitro 2-D Gas Model
+Arbitrum calculates total fee as `L2 base fee × (L2 gas used + L1 calldata buffer)`.
+**Precision Flag:** ArbOS uses a non-standard variant of Brotli called **brotli-zero (compression level 0)** — an approximation that is cheap to compute. The compressed size is multiplied by 16 (Ethereum's gas-per-non-zero-byte). ArbiSim Guard mirrors this exactly by compressing the calldata with Brotli level 0 before calculating the buffer, ensuring the pre-flight estimate matches on-chain settlement exactly.
+
+### Stylus WASM Ink & Host I/O
+Stylus measures compute in "ink" and charges a penalty when suspending WASM to run native host tasks (Host I/O).
+**Precision Flag:** The conversion rate of `1 EVM Gas = 10,000 Ink units` and the `0.84-gas host-I/O penalty` are **configurable, statistically-derived defaults** on Arbitrum, not hardcoded constants. ArbiSim uses these current default configurations but integrators should note they are subject to change by the chain owner. Stylus contracts are detected via the `0xEFF00000` bytecode prefix.
