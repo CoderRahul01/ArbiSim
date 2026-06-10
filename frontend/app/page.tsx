@@ -182,7 +182,7 @@ export default function HomePage() {
             <a href="https://github.com/YOUR_GITHUB/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
           </div>
           <Link href="/dashboard/simulate" className="px-4 py-2 rounded-md bg-coral text-white text-sm font-medium hover:bg-coral/90 transition-all duration-200 active:scale-95 shadow-lg shadow-coral/20">
-            Live demo →
+            Open Dashboard →
           </Link>
         </div>
       </nav>
@@ -206,7 +206,7 @@ export default function HomePage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Link href="/dashboard/simulate" className="px-6 py-3 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 active:scale-95 shadow-xl shadow-coral/25 text-center">
-                Try the live demo
+                Open Dashboard
               </Link>
               <a href="https://github.com/YOUR_GITHUB/arbisim-guard" target="_blank" rel="noopener noreferrer"
                 className="px-6 py-3 border border-border text-text-primary rounded-lg font-medium text-sm hover:bg-elevated hover:border-zinc-600 transition-all duration-200 active:scale-95 text-center">
@@ -331,7 +331,7 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-6">
             <a href="https://github.com/YOUR_GITHUB/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
-            <Link href="/dashboard/simulate" className="hover:text-text-primary transition-colors">Live demo</Link>
+            <Link href="/dashboard" className="hover:text-text-primary transition-colors">Dashboard</Link>
             <a href="mailto:hello@arbisimguard.com" className="hover:text-text-primary transition-colors">Contact</a>
           </div>
         </div>
