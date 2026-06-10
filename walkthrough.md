@@ -1,4 +1,4 @@
-# ArbiSim Guard - Walkthrough & Verification (Phase 2)
+# ArbiSim Guard - Walkthrough & Verification
 
 ArbiSim Guard has been advanced with precise Arbitrum Nitro internal gas math and ERC-4337 Account Abstraction (ZeroDev) UserOperation simulation guardrails.
 
@@ -168,3 +168,38 @@ Timeboost & MEV Telemetry: {
 }
 Verification Guardrail Passed: Transaction execution is SAFE to proceed on-chain.
 ```
+
+---
+
+## Phase 3: On-Chain Audit Trail Deployment & Verification
+
+We successfully deployed the `SimulationRegistry` smart contract to Arbitrum Sepolia. The registry serves as an immutable on-chain record of simulation outcomes, providing a trustless audit log of the agent's pre-flight status.
+
+### 1. Contract Deployment
+The contract was deployed using the Foundry script `Deploy.s.sol`.
+
+**Command Run:**
+```bash
+forge script script/Deploy.s.sol:DeploySimulationRegistry \
+  --rpc-url https://arb-sepolia.g.alchemy.com/v2/Fxz9uLBmyOb8QI63jJNnx \
+  --private-key <DEPLOYER_PRIVATE_KEY> \
+  --broadcast
+```
+
+**Deployment Output & Logs:**
+- **Contract Address:** [`0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32`](https://sepolia.arbiscan.io/address/0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32)
+- **Deployer/Owner Wallet:** `0x9eA8B065a624DF44CaB6C8cae74a22e07e29f2f1`
+- **Verification Status:** [View on Arbiscan Sepolia](https://sepolia.arbiscan.io/address/0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32)
+
+### 2. Sample On-Chain Simulation Logging (Verification)
+During the deployment transaction broadcast, the script logged two sample simulation records directly to the registry:
+- **Sample APPROVED Simulation Logged:** `87985724271660303711550967607177263253340265851351170720533983315105236925730`
+- **Sample REJECTED Simulation Logged:** `62753293213723610901931336894630703109152616929703458974964393465681055096956`
+- **Total On-Chain Logs verified:** 2 (1 APPROVED, 1 REJECTED)
+
+### 3. Deployment Gas & Transaction Fees (Nitro-Native)
+- **Deployment Tx Hash:** `0x129df0a9586925d585c68e2881d47ca17732c80c3836a6748be8b4ba82600638`
+- **APPROVED Log Tx Hash:** `0xcb61caba72aad89f1f171efe42704e7125765db1a78a1142cbdd6e6854063f25`
+- **REJECTED Log Tx Hash:** `0xfcd1725ebac7f3c9c8666e17dda32d0ada1d2fa1ed085e199e363fea488b3125`
+- **Total Paid:** `0.000033448498724 ETH` (1,656,403 gas * average 0.020188 gwei gas price)
+

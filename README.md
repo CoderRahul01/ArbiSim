@@ -288,6 +288,7 @@ ArbiSim/
 The `SimulationRegistry` is an immutable on-chain audit trail of simulation verdicts. Deployed on Arbitrum Sepolia.
 
 **Contract:** [`SimulationRegistry.sol`](./contracts/SimulationRegistry.sol)
+**Deployed Address:** [`0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32`](https://sepolia.arbiscan.io/address/0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32)
 
 | Feature | Detail |
 |---|---|
