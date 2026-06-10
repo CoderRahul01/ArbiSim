@@ -7,6 +7,7 @@
 ## 1. Data model
 
 ### `api_keys` (Neon Postgres)
+
 ```sql
 CREATE TABLE api_keys (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,6 +27,7 @@ CREATE INDEX api_keys_prefix_idx ON api_keys (prefix) WHERE revoked_at IS NULL;
 **Hot-path mirror**: `(prefix → { tier, monthly_quota, used_this_period })` is mirrored to Cloudflare KV so the edge Worker can decide rate-limit outcomes without a Neon roundtrip. Postgres remains the source of truth and reconciles periodically.
 
 ### `simulation_queue` (Neon Postgres)
+
 ```sql
 CREATE TABLE simulation_queue (
   job_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -50,7 +52,9 @@ CREATE UNIQUE INDEX simq_idem_uniq ON simulation_queue (api_key_id, idempotency_
 ```
 
 ### `telemetry` (MongoDB, append-only)
+
 One document per terminal job. Shape:
+
 ```json
 {
   "session_id": "uuid",
@@ -69,6 +73,7 @@ One document per terminal job. Shape:
 ```
 
 ### `backtests` (Neon Postgres, Stage 2)
+
 ```sql
 CREATE TABLE backtests (
   id            UUID PRIMARY KEY,
@@ -106,7 +111,7 @@ stateDiagram-v2
 
 **Reclaim**: a worker that crashes after `CLAIMED` but before writing a terminal status leaves a row stranded. The reclaim job runs every minute: any `CLAIMED`/`RUNNING` row whose `visibility_timeout < now()` is reset to `PENDING` and a new visibility_timeout is set. A `retry_count` column (omitted above for brevity) bounds the loop.
 
-**Critical distinction** (called out in `errors.md`): simulation-result flags like `execution_reverted` or `sandwich_detected` are returned with `200 OK` and `status: REJECTED`. They are **not** HTTP errors. HTTP 4xx/5xx are reserved for *platform* errors (bad key, rate limit, malformed tx, internal failure).
+**Critical distinction** (called out in `errors.md`): simulation-result flags like `execution_reverted` or `sandwich_detected` are returned with `200 OK` and `status: REJECTED`. They are **not** HTTP errors. HTTP 4xx/5xx are reserved for _platform_ errors (bad key, rate limit, malformed tx, internal failure).
 
 ---
 
@@ -117,7 +122,7 @@ Integrators may retry on network failures. Without dedup, the same transaction c
 - `Idempotency-Key` is an optional HTTP header on `POST /v1/simulations`.
 - Server stores `(api_key_id, idempotency_key, request_hash)` in Redis with a 24-hour TTL.
 - On hit, return the original `job_id` and current status (without re-enqueueing).
-- Hit on a *different* request body with the same key → `409 Conflict` with RFC 9457 problem `idempotency_key_mismatch`.
+- Hit on a _different_ request body with the same key → `409 Conflict` with RFC 9457 problem `idempotency_key_mismatch`.
 
 > "Idempotency belongs in business logic… Use job IDs. Check if work was already done. Skip if yes, process if no."
 
@@ -125,19 +130,21 @@ Integrators may retry on network failures. Without dedup, the same transaction c
 
 ## 4. Rate limits & headers
 
-| Tier | RPS sustained | Burst | Monthly cap |
-|---|---|---|---|
-| Free | 1 | 5 | 500 simulations |
-| Pro | 10 | 50 | 10,000 |
-| Enterprise | 50 | 200 | 100,000 |
+| Tier       | RPS sustained | Burst | Monthly cap     |
+| ---------- | ------------- | ----- | --------------- |
+| Free       | 1             | 5     | 500 simulations |
+| Pro        | 10            | 50    | 10,000          |
+| Enterprise | 50            | 200   | 100,000         |
 
 **Response headers** (every authenticated call):
+
 - `X-RateLimit-Limit` — monthly cap for the API key
 - `X-RateLimit-Remaining` — simulations left in the current period
 - `X-RateLimit-Reset` — ISO-8601 timestamp of the next period boundary
 - `X-RateLimit-Policy` — `sustained=RPS; burst=N; monthly=M`
 
 **On 429**:
+
 - `Retry-After: <seconds>` (integer, seconds until next slot is available)
 - Body is RFC 9457 `application/problem+json`. See [`../errors.md`](../errors.md).
 
@@ -178,9 +185,9 @@ Content-Type: application/problem+json
 
 **Two categories — keep them straight:**
 
-| Category | HTTP status | Examples |
-|---|---|---|
-| **Platform errors** | 4xx / 5xx | `401 invalid_api_key`, `429 rate_limited`, `400 invalid_payload`, `500 internal_error` |
+| Category                    | HTTP status                      | Examples                                                                                                            |
+| --------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Platform errors**         | 4xx / 5xx                        | `401 invalid_api_key`, `429 rate_limited`, `400 invalid_payload`, `500 internal_error`                              |
 | **Simulation-result flags** | `200 OK` with `status: REJECTED` | `execution_reverted`, `high_slippage`, `sandwich_detected`, `unsafe_allowance`, `sig_failed`, `valid_until_expired` |
 
 An integrator that treats REJECTED as HTTP failure will break on every bad transaction. Document this loudly.
@@ -192,6 +199,7 @@ An integrator that treats REJECTED as HTTP failure will break on every bad trans
 The most important one — the 202 → poll lifecycle — is in [`request-lifecycle.md`](./request-lifecycle.md).
 
 Other sequences covered there:
+
 - Standard transaction simulation
 - ERC-4337 `simulateValidation` path
 - MCP `tools/call` path (stdio + Streamable HTTP)
