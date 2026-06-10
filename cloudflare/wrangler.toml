@@ -8,7 +8,7 @@ RATE_LIMIT_WINDOW_SECONDS = "60"
 
 [[kv_namespaces]]
 binding = "API_KEYS"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "0001dbd5625240c7829984f24d96d1ed"
 
 # Set secrets via CLI — never in this file:
 # wrangler secret put GATEWAY_URL
