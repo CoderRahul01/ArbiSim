@@ -257,7 +257,8 @@ ArbiSim/
   cloudflare/      Edge Worker (auth, KV rate-limit, tier lookup)
   gateway/         Node + Express REST + MCP server
   workers/         Python 3.11 worker daemon (Anvil fork orchestrator)
-  contracts/       Stylus helpers (planned)
+  contracts/       SimulationRegistry.sol (Arbitrum Sepolia)
+  script/          Foundry deploy script
   docs/
     architecture/  HLD, LLD, request lifecycle (C4 + Mermaid)
     api/           OpenAPI 3.1 spec
@@ -281,6 +282,31 @@ ArbiSim/
 | [Error Catalog](./docs/errors.md) | RFC 9457 Problem Details, REJECTED is not an error |
 | [Quickstart](./docs/quickstart.md) | 5 minutes from install to first verdict |
 | [Dashboard Roadmap](./docs/dashboard-roadmap.md) | Phased feature plan: activation, retention, grant alignment |
+
+## On-Chain Contract
+
+The `SimulationRegistry` is an immutable on-chain audit trail of simulation verdicts. Deployed on Arbitrum Sepolia.
+
+**Contract:** [`SimulationRegistry.sol`](./contracts/SimulationRegistry.sol)
+
+| Feature | Detail |
+|---|---|
+| Access control | OpenZeppelin `Ownable` |
+| Emergency stop | OpenZeppelin `Pausable` |
+| Reentrancy protection | OpenZeppelin `ReentrancyGuard` |
+| Safety flags | Packed uint8 bitmap (8 independent flags) |
+| Batch logging | Up to 50 records per transaction |
+| Idempotency | Write-once per session ID |
+| Events | Indexed `SimulationLogged` for off-chain indexing |
+
+Deploy with Foundry:
+
+```bash
+forge script script/Deploy.s.sol:DeploySimulationRegistry \
+  --rpc-url $ARBITRUM_SEPOLIA_RPC \
+  --private-key $DEPLOYER_PRIVATE_KEY \
+  --broadcast
+```
 
 ## Competitive Position
 

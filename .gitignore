@@ -59,3 +59,8 @@ data/
 db/
 *.db
 *.sqlite
+
+# Foundry
+out/
+cache/
+broadcast/
