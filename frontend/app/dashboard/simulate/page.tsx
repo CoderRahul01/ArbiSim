@@ -142,7 +142,7 @@ export default function DashboardPage() {
 
       if (sessionId && data.status === 'PENDING') {
         for (let i = 0; i < 30; i++) {
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 3000));
           const poll = await fetch(`${CF_WORKER_URL}/api/v1/simulate/${sessionId}`, {
             headers: { 'X-API-Key': apiKey },
           }).catch(() => null);
