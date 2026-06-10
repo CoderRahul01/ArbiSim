@@ -1,0 +1,336 @@
+openapi: 3.1.0
+info:
+  title: ArbiSim Guard API
+  version: 1.0.0
+  summary: Pre-flight simulation for AI agents on Arbitrum.
+  description: |
+    Submit a transaction or ERC-4337 UserOp and receive an APPROVED or REJECTED
+    verdict with full gas, slippage, MEV, and Stylus telemetry. Simulations
+    run inside an ephemeral, block-accurate Anvil fork and never broadcast.
+
+    See the architecture docs at /docs/architecture/ and the MCP tool spec
+    at /docs/mcp/preflight-simulate.md.
+  contact:
+    name: ArbiSim Guard
+    url: https://arbisim-guard.vercel.app
+  license:
+    name: MIT
+servers:
+  - url: https://arbisim-proxy.workers.dev
+    description: Production (Cloudflare edge)
+  - url: http://localhost:3001
+    description: Local Node gateway
+tags:
+  - name: simulations
+    description: Async simulation lifecycle.
+  - name: backtests
+    description: Replay historical blocks through the pre-flight engine.
+  - name: keys
+    description: API key management.
+security:
+  - ApiKeyAuth: []
+paths:
+  /v1/simulations:
+    post:
+      tags: [simulations]
+      summary: Submit a transaction batch for pre-flight simulation.
+      description: |
+        Returns `202 Accepted` with a `job_id`. Poll `GET /v1/simulations/{job_id}`
+        until the status is no longer `PENDING`.
+      operationId: createSimulation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SimulationRequest' }
+            examples:
+              swap:
+                $ref: '#/components/examples/SwapExample'
+      responses:
+        '202':
+          description: Queued. Poll for terminal state.
+          headers:
+            X-RateLimit-Limit:     { $ref: '#/components/headers/RateLimitLimit' }
+            X-RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            X-RateLimit-Reset:     { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimulationAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/IdempotencyMismatch' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/simulations/{job_id}:
+    get:
+      tags: [simulations]
+      summary: Poll a simulation for terminal state.
+      operationId: getSimulation
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current state. May still be PENDING.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimulationResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/backtests:
+    post:
+      tags: [backtests]
+      summary: Replay a strategy across a historical Arbitrum block range.
+      operationId: createBacktest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BacktestRequest' }
+      responses:
+        '202':
+          description: Queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BacktestAccepted' }
+  /v1/backtests/{backtest_id}:
+    get:
+      tags: [backtests]
+      summary: Poll a backtest for terminal state.
+      operationId: getBacktest
+      parameters:
+        - in: path
+          name: backtest_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Backtest result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BacktestResult' }
+  /v1/keys:
+    get:
+      tags: [keys]
+      summary: List API keys for the authenticated owner.
+      operationId: listKeys
+      responses:
+        '200':
+          description: Keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApiKeyPublic' }
+    post:
+      tags: [keys]
+      summary: Mint a new API key. The full secret is returned ONCE.
+      operationId: createKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                tier: { type: string, enum: [free, pro, enterprise] }
+      responses:
+        '201':
+          description: Created. Capture the `secret` — it will not be shown again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKeyWithSecret' }
+  /v1/keys/{key_id}:
+    delete:
+      tags: [keys]
+      summary: Revoke an API key.
+      operationId: revokeKey
+      parameters:
+        - in: path
+          name: key_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Revoked. }
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema: { type: string, maxLength: 255 }
+      description: |
+        Optional. Repeat requests with the same key + same body return the
+        original `job_id` without re-enqueueing. TTL 24h. Differing bodies
+        with the same key yield `409 idempotency_key_mismatch`.
+  headers:
+    RateLimitLimit:     { schema: { type: integer } }
+    RateLimitRemaining: { schema: { type: integer } }
+    RateLimitReset:     { schema: { type: string, format: date-time } }
+  responses:
+    BadRequest:
+      description: Malformed request body.
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    Unauthorized:
+      description: Invalid or missing API key.
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    NotFound:
+      description: Resource not found.
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    RateLimited:
+      description: Quota exhausted.
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    IdempotencyMismatch:
+      description: Idempotency-Key was used with a different request body.
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+  schemas:
+    SimulationRequest:
+      type: object
+      required: [network, agent_address, transactions, max_slippage_tolerance]
+      properties:
+        network: { type: string, enum: [arbitrum-one, arbitrum-sepolia, robinhood-chain-testnet] }
+        agent_address: { type: string, pattern: '^0x[a-fA-F0-9]{40}$' }
+        transactions:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/Transaction' }
+        max_slippage_tolerance: { type: number, minimum: 0, maximum: 100, description: 'Percent (e.g. 2.0 = 2%)' }
+        user_op: { $ref: '#/components/schemas/UserOperation' }
+    Transaction:
+      type: object
+      required: [to, data, value]
+      properties:
+        to:    { type: string, pattern: '^0x[a-fA-F0-9]{40}$' }
+        data:  { type: string, pattern: '^0x[a-fA-F0-9]*$' }
+        value: { type: string, description: 'Wei as decimal string' }
+        gasLimit: { type: string }
+    UserOperation:
+      type: object
+      description: ERC-4337 v0.6 or v0.7 UserOp. v0.7 uses `entryPoint` `0x0000000071727De22E5E9d8BAf0edAc6f37da032`.
+    SimulationAccepted:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id: { type: string, format: uuid }
+        status: { type: string, const: PENDING }
+        poll_url: { type: string, format: uri-reference, description: 'Recommended next URL' }
+    SimulationResult:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:    { type: string, format: uuid }
+        status:    { type: string, enum: [PENDING, CLAIMED, RUNNING, APPROVED, REJECTED, FAILED, TIMED_OUT] }
+        telemetry: { $ref: '#/components/schemas/Telemetry' }
+        error:     { $ref: '#/components/schemas/SimulationError' }
+    Telemetry:
+      type: object
+      properties:
+        status:                  { type: string, enum: [APPROVED, REJECTED, FAILED, TIMED_OUT] }
+        gas_cost_eth:            { type: string }
+        stylus_ink_consumed:     { type: integer, description: 'ink units. Only nonzero for Stylus WASM (0xEFF00000 prefix).' }
+        net_pnl_usd:             { type: string, description: 'Computed via Chainlink price feeds (with L2 sequencer uptime check).' }
+        slippage_detected:       { type: boolean }
+        revert_reason:           { type: [string, 'null'] }
+        balance_traces:          { type: array, items: { type: object, additionalProperties: true } }
+        token_transfers:         { type: array, items: { type: object, additionalProperties: true } }
+        gas_breakdown:           { $ref: '#/components/schemas/GasBreakdown' }
+        flags:                   { $ref: '#/components/schemas/Flags' }
+    GasBreakdown:
+      type: object
+      properties:
+        l2_gas_used:        { type: integer }
+        l1_buffer:          { type: integer, description: 'L1 calldata buffer = brotli-zero(compressed_size) × 16. See D.1 in the technical rigor doc.' }
+        host_io_penalty_gas:{ type: number,  description: 'Stylus host I/O penalty. Default ~0.84 gas/call; configurable chain-side.' }
+        total_wei:          { type: string }
+    Flags:
+      type: object
+      properties:
+        execution_reverted:    { type: boolean }
+        high_slippage:         { type: boolean }
+        sandwich_detected:     { type: boolean }
+        unsafe_allowance:      { type: boolean }
+        insufficient_collateral:{ type: boolean }
+        sig_failed:            { type: boolean }
+        valid_until_expired:   { type: boolean }
+        timeboost_recommended: { type: boolean }
+        stylus_ink_overflow:   { type: boolean }
+    SimulationError:
+      type: object
+      properties:
+        code:    { type: string }
+        message: { type: string }
+        class:   { type: string, enum: [platform, simulation] }
+    BacktestRequest:
+      type: object
+      required: [strategy, block_start, block_end]
+      properties:
+        strategy:     { type: object, additionalProperties: true, description: 'Parameterised tx template the engine replays at each sampled block.' }
+        block_start:  { type: integer, minimum: 0 }
+        block_end:    { type: integer, minimum: 0 }
+        block_stride: { type: integer, minimum: 1, default: 100 }
+    BacktestAccepted:
+      type: object
+      properties:
+        backtest_id: { type: string, format: uuid }
+        status:      { type: string, const: PENDING }
+    BacktestResult:
+      type: object
+      properties:
+        backtest_id:    { type: string, format: uuid }
+        status:         { type: string }
+        sharpe:         { type: number, description: 'Sharpe ratio. R_f = 0 (crypto default), annualised.' }
+        max_drawdown:   { type: number, description: 'Max peak-to-trough drawdown (fraction, e.g. 0.21 = 21%).' }
+        calmar:         { type: number }
+        sortino:        { type: number }
+        win_rate:       { type: number }
+        profit_factor:  { type: number }
+        equity_curve:   { type: array, items: { type: object, properties: { block: { type: integer }, equity_usd: { type: number } } } }
+    ApiKeyPublic:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        prefix:      { type: string, description: 'e.g. "ask_free_a1b2". Never the full secret.' }
+        tier:        { type: string, enum: [free, pro, enterprise] }
+        created_at:  { type: string, format: date-time }
+        revoked_at:  { type: [string, 'null'], format: date-time }
+    ApiKeyWithSecret:
+      allOf:
+        - $ref: '#/components/schemas/ApiKeyPublic'
+        - type: object
+          required: [secret]
+          properties:
+            secret: { type: string, description: 'Shown ONCE. Store immediately. Format: ask_{tier}_{prefix}_{random32}.' }
+    Problem:
+      type: object
+      description: RFC 9457 Problem Details for HTTP APIs.
+      required: [type, title, status]
+      properties:
+        type:     { type: string, format: uri }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string }
+        code:     { type: string, description: 'Stable machine-readable code (e.g. rate_limited, idempotency_key_mismatch).' }
+        retry_after: { type: integer, description: 'Present on 429.' }
+  examples:
+    SwapExample:
+      summary: Uniswap V3 swap on Arbitrum One
+      value:
+        network: arbitrum-one
+        agent_address: '0x0000000000000000000000000000000000000001'
+        transactions:
+          - to: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506'
+            data: '0x38ed1739...'
+            value: '0'
+        max_slippage_tolerance: 2.0

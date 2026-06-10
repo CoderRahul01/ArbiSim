@@ -1,55 +1,37 @@
 # ArbiSim Guard
 
-A Pre-Flight AI Agent Execution & Simulation Layer built for the Arbitrum Ecosystem. It enables autonomous agent frameworks (Vibekit, Eliza) to validate multi-chain transactions and ERC-4337 UserOperations inside ephemeral, block-accurate forks one block before live settlement.
+> Pre-flight simulation for AI agents on Arbitrum. Run transactions and ERC-4337 UserOps inside an ephemeral, block-accurate Anvil fork before they reach mainnet. Approve, reject, or refuse — without spending a wei.
 
-## Technical Architecture
-- **API Gateway:** Node.js, TypeScript, Express.js implementing the Model Context Protocol (MCP) standard.
-- **Verification Layer:** ZeroDev Smart Account verification utilizing state overrides via `ethers.js`.
-- **Compute Engine:** Python 3.11 tracking multi-dimensional Arbitrum Nitro gas metrics.
-- **Data Layer:** Redis/AWS SQS queuing, NeonDB state configuration, and MongoDB log storage.
+## Quickstart
 
-## Core Moats Implemented
-1. **Nitro L1 Calldata Optimization:** Compresses execution payloads using `brotli` (Quality 1) to estimate data footprint size relative to the live L2 base fee.
-2. **Stylus WASM Verification:** Detects the `0xEFF000` bytecode prefix, parsing VM transitions to apply the 1:10,000 EVM-to-Ink ratio alongside a 0.84 gas Host I/O penalty.
-3. **Account Abstraction Guardrails:** Intercepts `UserOperations` (v0.6/v0.7), executing `simulateValidation` to flag `sigFailed` anomalies or expired `validUntil` parameters before deployment.
+See [`docs/quickstart.md`](./docs/quickstart.md) for a 5-minute walkthrough (REST + MCP).
 
----
+## Architecture
 
-## Getting Started
+The full doc set lives in [`docs/`](./docs/):
 
-### 1. Prerequisites
-- Node.js (v18+)
-- Python (3.10+)
-- Foundry (Anvil) installed and available on PATH
+- [**HLD**](./docs/architecture/hld.md) — C4 Context + Container, deployment topology, trust boundaries, scaling model.
+- [**LLD**](./docs/architecture/lld.md) — Data model, queue state machine, idempotency, rate limits, auth flow.
+- [**Request lifecycle**](./docs/architecture/request-lifecycle.md) — Sequence diagrams: 202→poll, UserOp, MCP, error/reclaim.
+- [**MCP tool**](./docs/mcp/preflight-simulate.md) — `preflight_simulate` contract for Vibekit/Eliza/LangGraph.
+- [**OpenAPI 3.1**](./docs/api/openapi.yaml) — REST surface, single source of truth for SDK generation.
+- [**Error catalog**](./docs/errors.md) — RFC 9457 Problem Details, the `REJECTED ≠ error` rule.
 
-### 2. Installation & Setup
-Initialize dependencies for both components:
-```bash
-# Install Express Gateway dependencies
-npm run gateway:install
+## Repo layout
 
-# Install Python Worker dependencies
-npm run worker:install
+```
+arbisim-guard/
+├── frontend/   Next.js App Router dashboard (Vercel)
+├── cloudflare/ Edge Worker (authn, KV rate-limit, hot tier lookup)
+├── gateway/    Node + Express REST + MCP server
+├── workers/    Python 3.11 worker daemon (Anvil fork orchestrator)
+├── contracts/  (planned) Stylus helpers, none deployed yet
+├── docs/       This doc set (C4, Mermaid, OpenAPI 3.1, RFC 9457)
+├── demo_agent.ts
+├── test_simulation.py
+└── test_userop_simulation.py
 ```
 
-Configure your environment variables:
-```bash
-cp .env.example .env
-```
+## Status
 
-### 3. Running the Simulation Platform
-Start the Gateway server and Worker daemons in separate terminal windows:
-
-```bash
-# Start the Express / MCP Gateway
-npm run gateway:start
-
-# Start the Python Queue Worker
-npm run worker:start
-```
-
-### 4. Running the E2E Demo Agent
-Simulate a live agent rebalance containing both failure mode verification and successful optimal route executions:
-```bash
-npx ts-node gateway/demo_agent.ts
-```
+Phase 1: live simulation working. Dashboard, MCP server, and Python worker are operational. Backtesting engine and the Simulation Explorer are next — see the project plan.

@@ -1,12 +1,22 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import { JetBrains_Mono } from 'next/font/google';
+import { Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
 import './globals.css';
 
+// Sans: Geist is the "new cool for developer tools" (Vercel).
+// Inter is the fallback — tall x-height, still the king of UI.
 const inter = Inter({
   subsets: ['latin'],
   weight: ['300', '400', '500', '600'],
-  variable: '--font-inter',
+  variable: '--font-sans',
+  display: 'swap',
+});
+
+// Serif: editorial display. Fraunces is the closest free analog to
+// Anthropic's bespoke "Copernicus" — used for hero + h1 only.
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  axes: ['SOFT', 'opsz'],
+  variable: '--font-serif',
   display: 'swap',
 });
 
@@ -18,6 +28,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://arbisim-guard.vercel.app'),
   title: 'ArbiSim Guard — Pre-Flight Simulation for AI Agents',
   description:
     'Test DeFi transactions in an isolated Arbitrum fork before executing with real capital. Catch reverts, slippage, MEV attacks, and stale UserOps before they cost you.',
@@ -34,8 +45,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
-      <body style={{ fontFamily: 'var(--font-inter, system-ui, sans-serif)' }}>{children}</body>
+    <html
+      lang="en"
+      className={`${inter.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body style={{ fontFamily: 'var(--font-sans, system-ui, sans-serif)' }}>{children}</body>
     </html>
   );
 }

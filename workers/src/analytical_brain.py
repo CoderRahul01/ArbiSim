@@ -256,12 +256,19 @@ def analyze_execution_trace(session_id: str, trace_data: dict, rpc_url: str) -> 
         
         if calldata_bytes:
             try:
-                compressed = brotli.compress(calldata_bytes, quality=1)
+                # Per Arbitrum docs, ArbOS uses a non-standard variant of Brotli
+                # called "brotli-zero" — compression level 0 (fastest), not the
+                # default level 1. The chain itself treats this as an
+                # approximation ("cheap to compute"), then multiplies the
+                # compressed size by 16 (Ethereum's gas-per-non-zero-byte) to
+                # get the L1 calldata buffer. We mirror that exact choice so
+                # our pre-flight estimate matches on-chain settlement.
+                compressed = brotli.compress(calldata_bytes, quality=0)
                 compressed_size = len(compressed)
             except Exception as e:
                 print(f"Brotli compression failed: {e}. Falling back to uncompressed size.")
                 compressed_size = len(calldata_bytes)
-                
+
             data_footprint = compressed_size * 16
             l1_gas_buffer = data_footprint / max(l2_base_fee, 1)
             total_l1_buffer_gas += l1_gas_buffer

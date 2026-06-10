@@ -177,9 +177,10 @@ export default function HomePage() {
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm text-text-secondary">
             <a href="#how-it-works" className="hover:text-text-primary transition-colors">How it works</a>
+            <a href="#mcp" className="hover:text-text-primary transition-colors">MCP</a>
             <a href="#flags" className="hover:text-text-primary transition-colors">Safety flags</a>
             <a href="#pricing" className="hover:text-text-primary transition-colors">Pricing</a>
-            <a href="https://github.com/YOUR_GITHUB/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
+            <a href="https://github.com/rahulpandey187/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
           </div>
           <Link href="/dashboard/simulate" className="px-4 py-2 rounded-md bg-coral text-white text-sm font-medium hover:bg-coral/90 transition-all duration-200 active:scale-95 shadow-lg shadow-coral/20">
             Open Dashboard →
@@ -195,9 +196,9 @@ export default function HomePage() {
               <span className="w-1.5 h-1.5 rounded-full bg-coral animate-pulse-dot" />
               Built for Arbitrum Open House London 2026
             </div>
-            <h1 className="text-5xl lg:text-6xl font-semibold text-text-primary leading-tight mb-6">
+            <h1 className="font-serif text-display text-text-primary leading-[1.05] mb-6 tracking-[-0.02em]">
               Test before you<br />
-              <span className="text-coral">transact.</span>
+              <span className="text-coral italic">transact.</span>
             </h1>
             <p className="text-lg text-text-secondary leading-relaxed mb-8 max-w-md">
               ArbiSim Guard gives AI agents a pre-flight safety check.
@@ -208,7 +209,7 @@ export default function HomePage() {
               <Link href="/dashboard/simulate" className="px-6 py-3 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 active:scale-95 shadow-xl shadow-coral/25 text-center">
                 Open Dashboard
               </Link>
-              <a href="https://github.com/YOUR_GITHUB/arbisim-guard" target="_blank" rel="noopener noreferrer"
+              <a href="https://github.com/rahulpandey187/arbisim-guard" target="_blank" rel="noopener noreferrer"
                 className="px-6 py-3 border border-border text-text-primary rounded-lg font-medium text-sm hover:bg-elevated hover:border-zinc-600 transition-all duration-200 active:scale-95 text-center">
                 View on GitHub
               </a>
@@ -236,7 +237,7 @@ export default function HomePage() {
       {/* HOW IT WORKS */}
       <section id="how-it-works" className="border-t border-border py-20">
         <div className="max-w-6xl mx-auto px-6">
-          <h2 className="text-2xl font-semibold text-text-primary mb-3">How it works</h2>
+          <h2 className="font-serif text-h1 text-text-primary mb-3">How it works</h2>
           <p className="text-text-secondary mb-12">Three steps. One API call. Zero capital at risk.</p>
           <div className="grid md:grid-cols-3 gap-6">
             {[
@@ -258,10 +259,83 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* MCP INTEGRATION */}
+      <section id="mcp" className="border-t border-border py-20">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-xs font-mono text-coral bg-coral/10 border border-coral/20 px-2.5 py-1 rounded-full">Model Context Protocol</span>
+          </div>
+          <h2 className="font-serif text-h1 text-text-primary mb-3">Native MCP tool. Zero REST required.</h2>
+          <p className="text-text-secondary mb-12 max-w-xl">
+            Call <code className="font-mono text-coral text-sm">preflight_simulate</code> directly from any MCP-compatible agent framework.
+            Your agent gets a structured APPROVED/REJECTED verdict — no HTTP wiring needed.
+          </p>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="rounded-xl border border-border bg-surface p-6">
+              <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-4">Agent config (claude_desktop_config.json)</p>
+              <pre className="text-xs font-mono text-text-secondary leading-relaxed overflow-x-auto">
+{`{
+  "mcpServers": {
+    "arbisim-guard": {
+      "command": "node",
+      "args": [
+        "./gateway/dist/index.js",
+        "--mcp"
+      ],
+      "env": {
+        "GATEWAY_API_KEY": "ask_free_••••"
+      }
+    }
+  }
+}`}
+              </pre>
+            </div>
+            <div className="rounded-xl border border-border bg-surface p-6">
+              <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-4">Tool call + structured response</p>
+              <pre className="text-xs font-mono text-text-secondary leading-relaxed overflow-x-auto">
+{`// Your agent calls:
+preflight_simulate({
+  network: "arbitrum-one",
+  agent_address: "0x...",
+  transactions: [{ to, data, value }],
+  max_slippage_tolerance: 2.0
+})
+
+// Gets back:
+{
+  "status": "REJECTED",
+  "flags": {
+    "high_slippage": true,   // 12.4%
+    "sandwich_detected": true
+  },
+  "gas": { "l1_buffer": 12800 },
+  "verdict": "ABORT"
+}`}
+              </pre>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-3 gap-4 mt-6">
+            {[
+              { name: 'Vibekit', desc: 'Arbitrum-native agent framework by Ember. Supports GMX, Camelot, Aave, Pendle.', badge: 'Native' },
+              { name: 'Eliza', desc: 'Multi-agent orchestration framework. Drop in the MCP plugin and call preflight_simulate from any agent.', badge: 'Plugin' },
+              { name: 'LangGraph', desc: 'Use the REST tool node or the MCP client adapter to integrate with your graph.', badge: 'Adapter' },
+            ].map(fw => (
+              <div key={fw.name} className="rounded-lg border border-border bg-surface/50 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-semibold text-text-primary">{fw.name}</span>
+                  <span className="text-xs font-mono text-teal bg-teal/10 border border-teal/20 px-1.5 py-0.5 rounded">{fw.badge}</span>
+                </div>
+                <p className="text-xs text-text-secondary leading-relaxed">{fw.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* SAFETY FLAGS */}
       <section id="flags" className="border-t border-border py-20">
         <div className="max-w-6xl mx-auto px-6">
-          <h2 className="text-2xl font-semibold text-text-primary mb-3">Safety flags</h2>
+          <h2 className="font-serif text-h1 text-text-primary mb-3">Safety flags</h2>
           <p className="text-text-secondary mb-12">Every simulation returns a structured flag object. Each flag is an independent check that can abort execution.</p>
           <FlagGrid />
         </div>
@@ -270,17 +344,17 @@ export default function HomePage() {
       {/* PRICING */}
       <section id="pricing" className="border-t border-border py-20">
         <div className="max-w-6xl mx-auto px-6">
-          <h2 className="text-2xl font-semibold text-text-primary mb-3">Pricing</h2>
+          <h2 className="font-serif text-h1 text-text-primary mb-3">Pricing</h2>
           <p className="text-text-secondary mb-12">Flat monthly pricing. One prevented bad transaction pays for the entire year.</p>
           <div className="grid md:grid-cols-3 gap-6 max-w-4xl">
             <PricingCard tier="Free" price="$0" limit="500 simulations / month"
               features={['All 8 safety flags', 'Gas breakdown (L1 + L2)', 'MEV sandwich scoring', 'MCP tool support', 'Community support']}
               cta="Get free API key" />
-            <PricingCard tier="Builder" price="$29" limit="10,000 simulations / month" highlighted
+            <PricingCard tier="Pro" price="$29" limit="10,000 simulations / month" highlighted
               features={['Everything in Free', 'ERC-4337 UserOp validation', 'Timeboost premium calc', 'Stylus WASM ink metrics', 'Email support']}
               cta="Start building" />
-            <PricingCard tier="Protocol" price="$299" limit="100,000 simulations / month"
-              features={['Everything in Builder', 'SLA guarantee', 'Custom rate limits', 'Webhook callbacks', 'Dedicated support']}
+            <PricingCard tier="Enterprise" price="$299" limit="100,000 simulations / month"
+              features={['Everything in Pro', 'SLA guarantee', 'Custom rate limits', 'Webhook callbacks', 'Dedicated support']}
               cta="Contact us" />
           </div>
         </div>
@@ -289,7 +363,7 @@ export default function HomePage() {
       {/* WAITLIST CTA */}
       <section className="border-t border-border py-20">
         <div className="max-w-2xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-semibold text-text-primary mb-4">
+          <h2 className="font-serif text-h2 text-text-primary mb-4 tracking-[-0.01em]">
             Protect your agents.<br />Simulate before you commit.
           </h2>
           <p className="text-text-secondary mb-8">
@@ -330,7 +404,7 @@ export default function HomePage() {
             <span>Built on Arbitrum</span>
           </div>
           <div className="flex items-center gap-6">
-            <a href="https://github.com/YOUR_GITHUB/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
+            <a href="https://github.com/rahulpandey187/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
             <Link href="/dashboard" className="hover:text-text-primary transition-colors">Dashboard</Link>
             <a href="mailto:hello@arbisimguard.com" className="hover:text-text-primary transition-colors">Contact</a>
           </div>
