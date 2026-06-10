@@ -1,0 +1,14 @@
+name = "arbisim-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+RATE_LIMIT_WINDOW_SECONDS = "60"
+
+[[kv_namespaces]]
+binding = "API_KEYS"
+id = "YOUR_KV_NAMESPACE_ID"
+
+# Set secrets via CLI — never in this file:
+# wrangler secret put GATEWAY_URL

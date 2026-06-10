@@ -1,0 +1,36 @@
+{
+  "name": "arbisim-guard-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pre-Flight AI Agent Execution & Simulation Layer on Arbitrum",
+  "scripts": {
+    "gateway:install": "npm install --prefix gateway",
+    "gateway:build":   "npm run build --prefix gateway",
+    "gateway:start":   "npm start --prefix gateway",
+    "gateway:dev":     "npm run dev --prefix gateway",
+
+    "worker:install":  "cd workers && pip3 install -r requirements.txt",
+    "worker:start":    "python3 workers/src/main.py",
+
+    "frontend:install": "npm install --prefix frontend",
+    "frontend:dev":     "npm run dev --prefix frontend",
+    "frontend:build":   "npm run build --prefix frontend",
+
+    "cf:install":  "npm install --prefix cloudflare",
+    "cf:deploy":   "cd cloudflare && npx wrangler deploy",
+    "cf:dev":      "cd cloudflare && npx wrangler dev",
+
+    "docker:up":   "docker-compose up -d",
+    "docker:down": "docker-compose down",
+
+    "install:all":  "npm run gateway:install && npm run worker:install && npm run frontend:install && npm run cf:install",
+    "start:all":    "concurrently \"npm run gateway:start\" \"npm run worker:start\"",
+
+    "test:userop":  "python3 test_userop_simulation.py",
+    "test:sim":     "python3 test_simulation.py",
+    "demo":         "npx ts-node gateway/demo_agent.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.0"
+  }
+}
