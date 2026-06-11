@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-// Admin ops go directly to the gateway (bypasses CF edge auth)
-const GATEWAY_URL  = process.env.NEXT_PUBLIC_GATEWAY_URL  ?? 'http://localhost:3001';
-const ADMIN_KEY    = process.env.NEXT_PUBLIC_ADMIN_KEY    ?? '';
+const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+const ADMIN_KEY     = process.env.NEXT_PUBLIC_ADMIN_KEY    ?? '';
 
 interface ApiKey {
   id: string;
@@ -84,8 +83,8 @@ export default function ApiKeysPage() {
       let record: Omit<ApiKey, 'id' | 'fullKey'>;
 
       if (ADMIN_KEY) {
-        // Real backend call — goes directly to gateway (bypasses CF edge auth)
-        const res = await fetch(`${GATEWAY_URL}/admin/api-keys`, {
+        // Real backend call — routes through CF Worker which validates ADMIN_API_KEY
+        const res = await fetch(`${CF_WORKER_URL}/admin/api-keys`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': ADMIN_KEY },
           body: JSON.stringify({ tier: newKeyTier, owner_email: newKeyName }),
