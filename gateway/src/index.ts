@@ -12,8 +12,9 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { config } from './config.js';
-import { router } from './routes.js';
+import { router, publicRouter } from './routes.js';
 import adminRouter from './routes/admin.js';
+import backtestRouter from './routes/backtest.js';
 import { requireAuth } from './middleware/auth.js';
 import { initDb, getSimulation, getMongoDb } from './db.js';
 import { submitSimulationJob } from './queue.js';
@@ -33,8 +34,14 @@ const port = config.gateway.port;
 
 app.use(express.json());
 
+// Public simulation permalink routes (no auth)
+app.use('/api/v1/sim', publicRouter);
+
 // Auth-protected simulation routes
 app.use('/api/v1', requireAuth, router);
+
+// Backtest routes (authenticated)
+app.use('/api/v1/backtest', requireAuth, backtestRouter);
 
 // Admin routes (use own key check inside router)
 app.use('/admin', adminRouter);

@@ -57,6 +57,28 @@ export default {
       });
     }
 
+    // ── Public simulation permalink — no auth required ─────────────────────
+    if (url.pathname.startsWith('/api/v1/sim/public/')) {
+      const targetUrl = env.GATEWAY_URL.replace(/\/$/, '') + url.pathname + url.search;
+      const proxyReq = new Request(targetUrl, {
+        method: request.method,
+        headers: request.headers,
+      });
+      try {
+        const resp = await fetch(proxyReq);
+        const body = await resp.arrayBuffer();
+        return new Response(body, {
+          status: resp.status,
+          headers: {
+            'Content-Type': resp.headers.get('Content-Type') ?? 'application/json',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch {
+        return jsonError(502, 'GATEWAY_ERROR', 'Simulation engine unreachable.', origin);
+      }
+    }
+
     const rawKey =
       request.headers.get('X-API-Key') ??
       request.headers.get('Authorization')?.replace('Bearer ', '') ??

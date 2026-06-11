@@ -263,11 +263,15 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
       updated_at: pgRecord.updated_at,
       revertReason: telemetry?.revert_reason ?? null,
       gasCostEth: telemetry?.gas_cost_eth,
+      netPnlUsd: telemetry?.net_pnl_usd,
       slippagePercent: slippagePct !== undefined && !isNaN(slippagePct) ? slippagePct : undefined,
       stylusInkConsumed: telemetry?.stylus_ink_consumed,
       flags,
       gasBreakdown: telemetry?.gas_breakdown ?? undefined,
       timeboost: telemetry?.timeboost_mev_telemetry ?? undefined,
+      balanceTraces: telemetry?.balance_traces ?? [],
+      tokenTransfers: telemetry?.token_transfers ?? [],
+      executionTraces: telemetry?.execution_traces ?? [],
     });
   } catch (error) {
     console.error(`Failed to fetch simulation status for session ${session_id}:`, error);
@@ -441,3 +445,71 @@ router.post('/validate-userop', async (req: Request, res: Response): Promise<voi
     } catch (e) {}
   }
 });
+
+// ── Public (unauthenticated) routes ─────────────────────────────────────────
+export const publicRouter = Router();
+
+/**
+ * @openapi
+ * /api/v1/sim/public/{sessionId}:
+ *   get:
+ *     summary: Public read-only simulation result (no auth required)
+ */
+publicRouter.get('/public/:sessionId', async (req: Request, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+
+  try {
+    const pgRecord = await getSimulation(sessionId);
+    if (!pgRecord || !['APPROVED', 'REJECTED'].includes(pgRecord.status)) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Simulation not found or not yet complete.' } });
+      return;
+    }
+
+    // Fetch telemetry from MongoDB with PG fallback (same pattern as authenticated route)
+    let mongoRecord = null;
+    try {
+      const mongoDb = getMongoDb();
+      mongoRecord = await mongoDb.collection('telemetry').findOne({ session_id: sessionId });
+    } catch {
+      // Suppress — fallback to PG
+    }
+
+    const telemetry = mongoRecord || pgRecord.telemetry;
+
+    const slippagePct = telemetry?.slippage_detected
+      ? parseFloat(telemetry.slippage_detected)
+      : undefined;
+
+    const flags: Record<string, boolean> | null = telemetry ? {
+      execution_reverted: !!(telemetry.revert_reason),
+      high_slippage: !isNaN(slippagePct as number) && (slippagePct as number) > 2,
+      sandwich_detected: (telemetry.timeboost_mev_telemetry?.mev_sandwich_risk_score ?? 0) > 0.5,
+      unsafe_allowance: false,
+      sig_failed: typeof telemetry.revert_reason === 'string' && telemetry.revert_reason.includes('sigFailed'),
+      valid_until_expired: typeof telemetry.revert_reason === 'string' && telemetry.revert_reason.includes('expired'),
+      timeboost_recommended: !!(telemetry.timeboost_mev_telemetry?.timeboost_fastlane_recommended),
+      stylus_ink_overflow: (telemetry.stylus_ink_consumed ?? 0) > 100_000_000,
+    } : null;
+
+    // Return sanitised result — no API key info, no owner details
+    res.json({
+      session_id: pgRecord.session_id,
+      network: pgRecord.network,
+      status: pgRecord.status,
+      agent_address: pgRecord.agent_address,
+      created_at: pgRecord.created_at,
+      gasCostEth: telemetry?.gas_cost_eth,
+      netPnlUsd: telemetry?.net_pnl_usd,
+      slippagePercent: slippagePct !== undefined && !isNaN(slippagePct) ? slippagePct : undefined,
+      stylusInkConsumed: telemetry?.stylus_ink_consumed,
+      revertReason: telemetry?.revert_reason ?? null,
+      flags,
+      gasBreakdown: telemetry?.gas_breakdown ?? undefined,
+      timeboost: telemetry?.timeboost_mev_telemetry ?? undefined,
+    });
+  } catch (error) {
+    console.error(`Public sim lookup failed for ${sessionId}:`, error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch simulation.' } });
+  }
+});
+

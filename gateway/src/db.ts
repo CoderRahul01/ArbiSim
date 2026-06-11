@@ -68,6 +68,27 @@ export async function initDb(): Promise<void> {
       )
     `);
 
+    // Backtesting suite table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS backtests (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        api_key_id      TEXT,
+        network         VARCHAR(50) NOT NULL,
+        agent_address   VARCHAR(42) NOT NULL,
+        strategy        JSONB NOT NULL,
+        block_start     BIGINT NOT NULL,
+        block_end       BIGINT NOT NULL,
+        block_stride    INTEGER NOT NULL DEFAULT 100,
+        status          VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+        results         JSONB,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      'CREATE INDEX IF NOT EXISTS bt_status_idx ON backtests (status, created_at ASC)'
+    );
+
     await client.query('COMMIT');
     console.log('PostgreSQL schemas initialized successfully.');
   } catch (error) {
@@ -192,3 +213,52 @@ export async function incrementApiKeyUsage(id: string): Promise<void> {
     [id]
   );
 }
+
+// ── Backtest helpers ───────────────────────────────────────────────────────
+
+export interface BacktestRow {
+  id: string;
+  api_key_id: string | null;
+  network: string;
+  agent_address: string;
+  strategy: any;
+  block_start: number;
+  block_end: number;
+  block_stride: number;
+  status: string;
+  results: any;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export async function createBacktest(
+  apiKeyId: string | null,
+  network: string,
+  agentAddress: string,
+  strategy: any,
+  blockStart: number,
+  blockEnd: number,
+  blockStride: number
+): Promise<BacktestRow> {
+  const res = await pgPool.query(
+    `INSERT INTO backtests (api_key_id, network, agent_address, strategy, block_start, block_end, block_stride, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING')
+     RETURNING *`,
+    [apiKeyId, network, agentAddress, JSON.stringify(strategy), blockStart, blockEnd, blockStride]
+  );
+  return res.rows[0];
+}
+
+export async function getBacktest(id: string): Promise<BacktestRow | null> {
+  const res = await pgPool.query('SELECT * FROM backtests WHERE id = $1', [id]);
+  return res.rows[0] ?? null;
+}
+
+export async function listBacktests(apiKeyId: string | null, limit: number = 20): Promise<BacktestRow[]> {
+  const res = await pgPool.query(
+    `SELECT * FROM backtests WHERE api_key_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    [apiKeyId, limit]
+  );
+  return res.rows;
+}
+

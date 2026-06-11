@@ -28,6 +28,15 @@ const NAV_ITEMS = [
     badge: 'live',
   },
   {
+    href: '/dashboard/backtest',
+    label: 'Backtest',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <polyline points="1,12 4,5 7,9 10,3 13,7 15,4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/api-keys',
     label: 'API Keys',
     icon: (
