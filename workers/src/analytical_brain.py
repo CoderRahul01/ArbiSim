@@ -346,9 +346,12 @@ def analyze_execution_trace(session_id: str, trace_data: dict, rpc_url: str) -> 
     
     timeboost_mev_telemetry = evaluate_timeboost_and_mev_risk(calldata_bytes, target_contract, total_l2_gas_used)
 
+    raw_status = trace_data.get("status", "SUCCESS")
+    terminal_status = "APPROVED" if raw_status == "SUCCESS" else "REJECTED"
+
     return {
         "session_id": session_id,
-        "status": trace_data.get("status", "SUCCESS"),
+        "status": terminal_status,
         "gas_cost_eth": f"{gas_cost_eth:.8f}",
         "stylus_ink_consumed": total_ink,
         "net_pnl_usd": f"{net_pnl_usd:+.2f}",

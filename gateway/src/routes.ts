@@ -276,6 +276,44 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
 });
 
 /**
+ * @openapi
+ * /api/v1/stats:
+ *   get:
+ *     summary: Usage statistics for the authenticated API key
+ */
+router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pgPool.query(`
+      SELECT
+        COUNT(*)                                                               AS total,
+        COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE)               AS today,
+        COUNT(*) FILTER (WHERE created_at >= date_trunc('month', now()))       AS month,
+        COUNT(*) FILTER (WHERE status = 'APPROVED'
+                           AND created_at >= date_trunc('month', now()))       AS approved,
+        COUNT(*) FILTER (WHERE status IN ('APPROVED','REJECTED')
+                           AND created_at >= date_trunc('month', now()))       AS terminal
+      FROM simulations
+    `);
+    const row = result.rows[0];
+    const terminal  = Number(row.terminal);
+    const approved  = Number(row.approved);
+    const approval_rate = terminal > 0 ? Math.round((approved / terminal) * 100) : null;
+
+    res.json({
+      today:         Number(row.today),
+      month:         Number(row.month),
+      total:         Number(row.total),
+      approval_rate,
+      quota_used:    Number(row.month),
+      quota_limit:   500,
+    });
+  } catch (error) {
+    console.error('Stats query failed:', error);
+    res.status(500).json({ error: 'Failed to fetch stats.' });
+  }
+});
+
+/**
  * Internal route called by workers to simulate ERC-4337 validation logic using state overrides.
  */
 router.post('/validate-userop', async (req: Request, res: Response): Promise<void> => {

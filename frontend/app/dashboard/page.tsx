@@ -1,11 +1,39 @@
-import Link from 'next/link';
+'use client';
 
-const STATS = [
-  { label: 'Simulations today',     value: '0',       sub: 'no activity yet',         color: 'text-text-primary' },
-  { label: 'This month',            value: '0',        sub: '500 free remaining',      color: 'text-text-primary' },
-  { label: 'Approval rate',         value: '—',        sub: 'run first simulation',    color: 'text-text-tertiary' },
-  { label: 'Avg gas saved',         value: '—',        sub: 'estimate on first run',   color: 'text-text-tertiary' },
-];
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+
+const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+
+interface LiveStats {
+  today: number;
+  month: number;
+  approval_rate: number | null;
+  quota_used: number;
+  quota_limit: number;
+}
+
+function useLiveStats(): LiveStats {
+  const [stats, setStats] = useState<LiveStats>({
+    today: 0, month: 0, approval_rate: null, quota_used: 0, quota_limit: 500,
+  });
+
+  useEffect(() => {
+    const key = typeof window !== 'undefined'
+      ? (localStorage.getItem('arbisim_api_key') || '')
+      : '';
+    if (!key) return;
+
+    fetch(`${CF_WORKER_URL}/api/v1/stats`, {
+      headers: { 'X-API-Key': key },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setStats(data as LiveStats); })
+      .catch(() => {});
+  }, []);
+
+  return stats;
+}
 
 const CHECKLIST = [
   {
@@ -43,6 +71,35 @@ const NETWORK_STATUS = [
 ];
 
 export default function DashboardOverview() {
+  const stats = useLiveStats();
+
+  const statCards = [
+    {
+      label: 'Simulations today',
+      value: stats.today > 0 ? String(stats.today) : '0',
+      sub: stats.today > 0 ? 'since midnight UTC' : 'no activity yet',
+      color: 'text-text-primary',
+    },
+    {
+      label: 'This month',
+      value: String(stats.month),
+      sub: `${stats.quota_limit - stats.quota_used} free remaining`,
+      color: 'text-text-primary',
+    },
+    {
+      label: 'Approval rate',
+      value: stats.approval_rate !== null ? `${stats.approval_rate}%` : '—',
+      sub: stats.approval_rate !== null ? 'of terminal simulations' : 'run first simulation',
+      color: stats.approval_rate !== null ? 'text-text-primary' : 'text-text-tertiary',
+    },
+    {
+      label: 'Quota used',
+      value: stats.quota_used > 0 ? `${stats.quota_used} / ${stats.quota_limit}` : '—',
+      sub: 'resets monthly',
+      color: stats.quota_used > 0 ? 'text-text-primary' : 'text-text-tertiary',
+    },
+  ];
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Page header */}
@@ -60,7 +117,7 @@ export default function DashboardOverview() {
 
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {STATS.map(s => (
+          {statCards.map(s => (
             <div key={s.label} className="p-5 rounded-xl border border-border bg-surface hover:bg-elevated transition-colors duration-200">
               <p className="text-xs text-text-tertiary mb-2 font-mono">{s.label}</p>
               <p className={`text-2xl font-semibold font-mono ${s.color}`}>{s.value}</p>
