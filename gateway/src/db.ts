@@ -149,3 +149,46 @@ export async function enqueueSimulation(sessionId: string, payload: any): Promis
   `;
   await pgPool.query(queryText, [sessionId, JSON.stringify(payload)]);
 }
+
+// ── API Key helpers ────────────────────────────────────────────────────────
+
+export interface ApiKeyRow {
+  id: string;
+  prefix: string;
+  tier: string;
+  monthly_quota: number;
+  created_at: Date;
+}
+
+export async function createApiKey(
+  prefix: string,
+  hash: string,
+  tier: string,
+  ownerEmail?: string
+): Promise<ApiKeyRow> {
+  const res = await pgPool.query(
+    `INSERT INTO api_keys (prefix, hash, tier, owner_email)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, prefix, tier, monthly_quota, created_at`,
+    [prefix, hash, tier, ownerEmail ?? null]
+  );
+  return res.rows[0];
+}
+
+export async function getApiKeyByPrefix(prefix: string): Promise<{ id: string; hash: string; tier: string } | null> {
+  const res = await pgPool.query(
+    `SELECT id, prefix, hash, tier, monthly_quota
+     FROM api_keys
+     WHERE prefix = $1 AND revoked_at IS NULL
+     LIMIT 1`,
+    [prefix]
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function incrementApiKeyUsage(id: string): Promise<void> {
+  await pgPool.query(
+    `UPDATE api_keys SET usage_count = COALESCE(usage_count, 0) + 1 WHERE id = $1`,
+    [id]
+  );
+}

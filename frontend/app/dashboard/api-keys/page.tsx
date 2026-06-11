@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY ?? '';
+// Admin ops go directly to the gateway (bypasses CF edge auth)
+const GATEWAY_URL  = process.env.NEXT_PUBLIC_GATEWAY_URL  ?? 'http://localhost:3001';
+const ADMIN_KEY    = process.env.NEXT_PUBLIC_ADMIN_KEY    ?? '';
 
 interface ApiKey {
   id: string;
@@ -83,41 +84,53 @@ export default function ApiKeysPage() {
       let record: Omit<ApiKey, 'id' | 'fullKey'>;
 
       if (ADMIN_KEY) {
-        // Real backend call
-        const res = await fetch(`${CF_WORKER_URL}/admin/api-keys`, {
+        // Real backend call — goes directly to gateway (bypasses CF edge auth)
+        const res = await fetch(`${GATEWAY_URL}/admin/api-keys`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': ADMIN_KEY },
-          body: JSON.stringify({ tier: newKeyTier, ownerId: newKeyName }),
+          body: JSON.stringify({ tier: newKeyTier, owner_email: newKeyName }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json() as { apiKey: string; record: { tier: string; monthlyLimit: number; minuteLimit: number; createdAt: string } };
-        fullKey = data.apiKey;
-        record = {
-          prefix: fullKey.slice(0, 16) + '••••••••',
-          tier: newKeyTier,
-          monthlyLimit: data.record.monthlyLimit,
-          minuteLimit: data.record.minuteLimit,
-          createdAt: data.record.createdAt,
-          active: true,
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
+          throw new Error(err?.error?.message ?? `HTTP ${res.status}`);
+        }
+        const data = await res.json() as {
+          key: string;
+          prefix: string;
+          tier: string;
+          id: string;
+          created_at: string;
+          cf_kv: { hash: string; value: string; command: string };
         };
-      } else {
-        // Demo mode — generate client-side key (for UI demonstration)
-        const rand = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-          .map(b => b.toString(16).padStart(2, '0')).join('');
-        fullKey = `ask_${newKeyTier}_${rand}`;
+        fullKey = data.key;
         record = {
-          prefix: fullKey.slice(0, 16) + '••••••••',
+          prefix: data.prefix + '.••••••••',
           tier: newKeyTier,
           monthlyLimit: TIER_LIMITS[newKeyTier].monthly,
-          minuteLimit: TIER_LIMITS[newKeyTier].perMinute,
-          createdAt: new Date().toISOString(),
-          active: true,
+          minuteLimit:  TIER_LIMITS[newKeyTier].perMinute,
+          createdAt:    data.created_at,
+          active:       true,
+        };
+      } else {
+        // Demo mode — client-side key for UI demonstration only
+        const rand = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+          .map(b => b.toString(16).padStart(2, '0')).join('');
+        fullKey = `ask_${newKeyTier}_${rand.slice(0, 8)}.${rand.slice(8)}`;
+        record = {
+          prefix: `ask_${newKeyTier}_${rand.slice(0, 8)}.••••••••`,
+          tier: newKeyTier,
+          monthlyLimit: TIER_LIMITS[newKeyTier].monthly,
+          minuteLimit:  TIER_LIMITS[newKeyTier].perMinute,
+          createdAt:    new Date().toISOString(),
+          active:       true,
         };
       }
 
       const newKey: ApiKey = { id: crypto.randomUUID(), ...record, fullKey };
       setJustCreated(newKey);
       persist([newKey, ...keys]);
+      // Store as the active key so the simulate page and stats hook pick it up
+      try { localStorage.setItem('arbisim_api_key', fullKey); } catch {}
       setShowModal(false);
       setNewKeyName('');
     } catch (err) {
@@ -283,7 +296,7 @@ export default function ApiKeysPage() {
             <div>
               <p className="text-xs text-text-tertiary mb-2 font-mono uppercase tracking-wider">REST API</p>
               <pre className="text-xs font-mono text-text-secondary bg-elevated border border-border rounded-lg p-3 overflow-x-auto">
-{`curl -X POST ${CF_WORKER_URL}/api/v1/simulate \\
+{`curl -X POST https://arbisim-proxy.workers.dev/api/v1/simulate \\
   -H "X-API-Key: ask_free_••••••••" \\
   -H "Content-Type: application/json" \\
   -d '{"network":"arbitrum-one","agent_address":"0x...","transactions":[...],"max_slippage_tolerance":2.0}'`}
