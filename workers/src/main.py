@@ -9,6 +9,7 @@ from analytical_brain import AnalyticalBrain
 from storage import save_telemetry
 from chain_registry import log_simulation_to_chain
 from backtest_runner import run_backtest
+from webhook_delivery import deliver_webhook
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
 
@@ -288,6 +289,10 @@ async def process_job(job: dict) -> None:
         await update_simulation(session_id, results["status"], results)
         await mark_job_done(job["id"], "COMPLETED")
 
+        # Deliver webhook asynchronously
+        pool = await get_pool()
+        await deliver_webhook(session_id, results["status"], results, pool)
+
         # Write verdict to SimulationRegistry.sol on Arbitrum Sepolia (non-blocking)
         await log_simulation_to_chain(session_id, results)
 
@@ -307,6 +312,11 @@ async def process_job(job: dict) -> None:
         }
         await update_simulation(session_id, "REJECTED", err_telemetry)
         await mark_job_done(job["id"], "FAILED")
+        
+        # Deliver webhook on failure/rejection
+        pool = await get_pool()
+        await deliver_webhook(session_id, "REJECTED", err_telemetry, pool)
+
         try:
             await save_telemetry(
                 session_id=session_id,

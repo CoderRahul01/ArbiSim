@@ -15,6 +15,7 @@ import { config } from './config.js';
 import { router, publicRouter } from './routes.js';
 import adminRouter from './routes/admin.js';
 import backtestRouter from './routes/backtest.js';
+import webhookRouter from './routes/webhooks.js';
 import { requireAuth } from './middleware/auth.js';
 import { initDb, getSimulation, getMongoDb } from './db.js';
 import { submitSimulationJob } from './queue.js';
@@ -42,6 +43,9 @@ app.use('/api/v1', requireAuth, router);
 
 // Backtest routes (authenticated)
 app.use('/api/v1/backtest', requireAuth, backtestRouter);
+
+// Webhook routes (authenticated)
+app.use('/api/v1/webhooks', requireAuth, webhookRouter);
 
 // Admin routes (use own key check inside router)
 app.use('/admin', adminRouter);
