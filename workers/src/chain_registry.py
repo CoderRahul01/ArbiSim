@@ -72,11 +72,15 @@ def _build_flags(results: dict) -> int:
 
 def _sync_log(session_id: str, results: dict) -> str:
     """Synchronous web3 call — intended to run in a thread executor."""
-    private_key = os.getenv("REGISTRY_SIGNER_KEY")
+    private_key = os.getenv("REGISTRY_SIGNER_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
     if not private_key:
-        raise EnvironmentError("REGISTRY_SIGNER_KEY not set — skipping on-chain write")
+        raise EnvironmentError("REGISTRY_SIGNER_KEY (or DEPLOYER_PRIVATE_KEY) not set — skipping on-chain write")
 
-    rpc_url = os.getenv("ARB_SEPOLIA_RPC_URL", "https://sepolia-rollup.arbitrum.io/rpc")
+    rpc_url = (
+        os.getenv("ARB_SEPOLIA_RPC_URL")
+        or os.getenv("ARBITRUM_SEPOLIA_RPC")
+        or "https://sepolia-rollup.arbitrum.io/rpc"
+    )
     w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 30}))
     if not w3.is_connected():
         raise ConnectionError(f"Cannot connect to Arbitrum Sepolia at {rpc_url}")
