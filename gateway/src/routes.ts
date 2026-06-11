@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { ethers } from 'ethers';
-import { getSimulation, getMongoDb, updateSimulationStatusAndTelemetry, pgPool } from './db.js';
+import { getSimulation, getMongoDb, updateSimulationStatusAndTelemetry, pgPool, listSimulations } from './db.js';
 import { submitSimulationJob } from './queue.js';
+import { MCP_TOOLS, callMcpTool } from './mcp-tools.js';
 
 export const router = Router();
 
@@ -183,13 +184,15 @@ router.post('/simulate', async (req: Request, res: Response): Promise<void> => {
       max_slippage_tolerance
     };
 
+    const apiKeyId = (req as any).apiKeyId || null;
     // Submit simulation job
     await submitSimulationJob(
       sessionId,
       network,
       agent_address,
       isUserOp ? [] : transactions,
-      max_slippage_tolerance
+      max_slippage_tolerance,
+      apiKeyId
     );
 
     // Update the PostgreSQL queue row with the full payload (ensures UserOp fields are present)
@@ -253,6 +256,13 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
       stylus_ink_overflow: (telemetry.stylus_ink_consumed ?? 0) > 100_000_000,
     } : null;
 
+    // 3. Fetch original queue payload
+    const queueRes = await pgPool.query(
+      'SELECT payload FROM simulation_queue WHERE session_id = $1 LIMIT 1',
+      [session_id]
+    );
+    const payload = queueRes.rows[0]?.payload ?? null;
+
     res.status(200).json({
       sessionId: pgRecord.session_id,
       session_id: pgRecord.session_id,
@@ -263,11 +273,16 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
       updated_at: pgRecord.updated_at,
       revertReason: telemetry?.revert_reason ?? null,
       gasCostEth: telemetry?.gas_cost_eth,
+      netPnlUsd: telemetry?.net_pnl_usd,
       slippagePercent: slippagePct !== undefined && !isNaN(slippagePct) ? slippagePct : undefined,
       stylusInkConsumed: telemetry?.stylus_ink_consumed,
       flags,
       gasBreakdown: telemetry?.gas_breakdown ?? undefined,
       timeboost: telemetry?.timeboost_mev_telemetry ?? undefined,
+      balanceTraces: telemetry?.balance_traces ?? [],
+      tokenTransfers: telemetry?.token_transfers ?? [],
+      executionTraces: telemetry?.execution_traces ?? [],
+      payload,
     });
   } catch (error) {
     console.error(`Failed to fetch simulation status for session ${session_id}:`, error);
@@ -441,3 +456,213 @@ router.post('/validate-userop', async (req: Request, res: Response): Promise<voi
     } catch (e) {}
   }
 });
+
+// ── MCP HTTP Bridge ─────────────────────────────────────────────────────────
+// POST /api/v1/mcp — JSON-RPC 2.0 over HTTP for the in-browser MCP playground.
+// Handles tools/list and tools/call. Auth via requireAuth (applied at mount point).
+router.post('/mcp', async (req: Request, res: Response): Promise<void> => {
+  const { jsonrpc, id, method, params } = req.body ?? {};
+
+  if (jsonrpc !== '2.0' || !method) {
+    res.status(400).json({ jsonrpc: '2.0', id: id ?? null, error: { code: -32600, message: 'Invalid JSON-RPC request' } });
+    return;
+  }
+
+  if (method === 'tools/list') {
+    res.json({ jsonrpc: '2.0', id, result: { tools: MCP_TOOLS } });
+    return;
+  }
+
+  if (method === 'tools/call') {
+    const { name, arguments: args } = (params ?? {}) as { name?: string; arguments?: Record<string, unknown> };
+    if (!name) {
+      res.status(400).json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'params.name is required' } });
+      return;
+    }
+    const apiKeyId = (req as any).apiKeyId as string | undefined;
+    const { result, error } = await callMcpTool(name, args ?? {}, apiKeyId);
+    if (error) {
+      res.json({ jsonrpc: '2.0', id, error });
+      return;
+    }
+    res.json({ jsonrpc: '2.0', id, result });
+    return;
+  }
+
+  res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } });
+});
+
+// ── Public (unauthenticated) routes ─────────────────────────────────────────
+export const publicRouter = Router();
+
+/**
+ * @openapi
+ * /api/v1/sim/public/{sessionId}:
+ *   get:
+ *     summary: Public read-only simulation result (no auth required)
+ */
+publicRouter.get('/public/:sessionId', async (req: Request, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+
+  try {
+    const pgRecord = await getSimulation(sessionId);
+    if (!pgRecord || !['APPROVED', 'REJECTED'].includes(pgRecord.status)) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Simulation not found or not yet complete.' } });
+      return;
+    }
+
+    // Fetch telemetry from MongoDB with PG fallback (same pattern as authenticated route)
+    let mongoRecord = null;
+    try {
+      const mongoDb = getMongoDb();
+      mongoRecord = await mongoDb.collection('telemetry').findOne({ session_id: sessionId });
+    } catch {
+      // Suppress — fallback to PG
+    }
+
+    const telemetry = mongoRecord || pgRecord.telemetry;
+
+    const slippagePct = telemetry?.slippage_detected
+      ? parseFloat(telemetry.slippage_detected)
+      : undefined;
+
+    const flags: Record<string, boolean> | null = telemetry ? {
+      execution_reverted: !!(telemetry.revert_reason),
+      high_slippage: !isNaN(slippagePct as number) && (slippagePct as number) > 2,
+      sandwich_detected: (telemetry.timeboost_mev_telemetry?.mev_sandwich_risk_score ?? 0) > 0.5,
+      unsafe_allowance: false,
+      sig_failed: typeof telemetry.revert_reason === 'string' && telemetry.revert_reason.includes('sigFailed'),
+      valid_until_expired: typeof telemetry.revert_reason === 'string' && telemetry.revert_reason.includes('expired'),
+      timeboost_recommended: !!(telemetry.timeboost_mev_telemetry?.timeboost_fastlane_recommended),
+      stylus_ink_overflow: (telemetry.stylus_ink_consumed ?? 0) > 100_000_000,
+    } : null;
+
+    // Return sanitised result — no API key info, no owner details
+    res.json({
+      session_id: pgRecord.session_id,
+      network: pgRecord.network,
+      status: pgRecord.status,
+      agent_address: pgRecord.agent_address,
+      created_at: pgRecord.created_at,
+      gasCostEth: telemetry?.gas_cost_eth,
+      netPnlUsd: telemetry?.net_pnl_usd,
+      slippagePercent: slippagePct !== undefined && !isNaN(slippagePct) ? slippagePct : undefined,
+      stylusInkConsumed: telemetry?.stylus_ink_consumed,
+      revertReason: telemetry?.revert_reason ?? null,
+      flags,
+      gasBreakdown: telemetry?.gas_breakdown ?? undefined,
+      timeboost: telemetry?.timeboost_mev_telemetry ?? undefined,
+    });
+  } catch (error) {
+    console.error(`Public sim lookup failed for ${sessionId}:`, error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch simulation.' } });
+  }
+});
+
+/**
+ * @openapi
+ * /api/v1/logs:
+ *   get:
+ *     summary: Retrieve history of simulation API calls for the authenticated key
+ */
+router.get('/logs', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const apiKeyId = (req as any).apiKeyId;
+    if (!apiKeyId) {
+      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'API key is required.' } });
+      return;
+    }
+
+    const { status, network, limit = '50', offset = '0', from, to } = req.query;
+
+    const parsedLimit = parseInt(String(limit), 10);
+    const parsedOffset = parseInt(String(offset), 10);
+    const parsedFrom = from ? new Date(String(from)) : undefined;
+    const parsedTo = to ? new Date(String(to)) : undefined;
+
+    const result = await listSimulations(apiKeyId, {
+      status: status ? String(status) : undefined,
+      network: network ? String(network) : undefined,
+      limit: parsedLimit,
+      offset: parsedOffset,
+      from: parsedFrom,
+      to: parsedTo,
+    });
+
+    res.json({
+      simulations: result.rows,
+      total: result.total,
+      has_more: parsedOffset + result.rows.length < result.total,
+    });
+  } catch (error) {
+    console.error('Failed to list simulation logs:', error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch logs.' } });
+  }
+});
+
+/**
+ * @openapi
+ * /api/v1/analytics:
+ *   get:
+ *     summary: Risk analytics dashboard data
+ */
+router.get('/analytics', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const apiKeyId = (req as any).apiKeyId;
+    if (!apiKeyId) {
+      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'API key is required.' } });
+      return;
+    }
+
+    const days = parseInt(String(req.query.period ?? '30'), 10);
+
+    // Query 1: per-day counts (30-day approval rate trend)
+    const countsRes = await pgPool.query(
+      `SELECT DATE(created_at) as date, status, COUNT(*)::integer as count 
+       FROM simulations
+       WHERE created_at >= NOW() - ($2 * INTERVAL '1 day') AND api_key_id = $1
+       GROUP BY 1, 2 ORDER BY 1`,
+      [apiKeyId, days]
+    );
+
+    // Query 2: rejection reasons from telemetry JSONB
+    const reasonsRes = await pgPool.query(
+      `SELECT COALESCE(telemetry->>'revert_reason', 'Unknown Revert') as reason, COUNT(*)::integer as count 
+       FROM simulations
+       WHERE status = 'REJECTED' AND api_key_id = $1 AND created_at >= NOW() - ($2 * INTERVAL '1 day')
+       GROUP BY 1 ORDER BY count DESC LIMIT 10`,
+      [apiKeyId, days]
+    );
+
+    // Query 3: average gas cost per day
+    const gasRes = await pgPool.query(
+      `SELECT DATE(created_at) as date, AVG(COALESCE((telemetry->>'gas_cost_eth')::numeric, 0))::numeric as avg_gas
+       FROM simulations 
+       WHERE api_key_id = $1 AND created_at >= NOW() - ($2 * INTERVAL '1 day')
+       GROUP BY 1 ORDER BY 1`,
+      [apiKeyId, days]
+    );
+
+    // Query 4: backtests summary
+    const backtestRes = await pgPool.query(
+      `SELECT COUNT(*)::integer as total, AVG(COALESCE((results->>'total_pnl_usd')::numeric, 0))::numeric as avg_pnl
+       FROM backtests
+       WHERE api_key_id = $1 AND status = 'COMPLETED'`,
+      [apiKeyId]
+    );
+
+    res.json({
+      daily_buckets: countsRes.rows,
+      rejection_reasons: reasonsRes.rows,
+      gas_stats: gasRes.rows,
+      backtest_summary: {
+        total: parseInt(backtestRes.rows[0]?.total ?? '0', 10),
+        avg_pnl: parseFloat(backtestRes.rows[0]?.avg_pnl ?? '0'),
+      }
+    });
+  } catch (error) {
+    console.error('Failed to query analytics:', error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch analytics.' } });
+  }
+});
+

@@ -37,7 +37,8 @@ export async function submitSimulationJob(
   network: string,
   agentAddress: string,
   transactions: any[],
-  maxSlippageTolerance: number
+  maxSlippageTolerance: number,
+  apiKeyId: string | null = null
 ): Promise<void> {
   const payload: SimulatePayload = {
     session_id: sessionId,
@@ -48,7 +49,7 @@ export async function submitSimulationJob(
   };
 
   // 1. Log simulation record in database (NeonDB/Postgres)
-  await createSimulation(sessionId, network, agentAddress);
+  await createSimulation(sessionId, network, agentAddress, apiKeyId);
 
   // 2. Put onto SQS or fallback to PostgreSQL local queue table
   if (sqsClient && sqsQueueUrl) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -40,11 +40,11 @@ function Field({ label, hint, children }: FieldProps) {
   );
 }
 
-function SaveButton({ state, onClick }: { state: SaveState; onClick: () => void }) {
+function SaveButton({ state, onClick, disabled }: { state: SaveState; onClick: () => void; disabled?: boolean }) {
   return (
     <button
       onClick={onClick}
-      disabled={state === 'saving'}
+      disabled={state === 'saving' || disabled}
       className={`px-4 py-2 rounded-lg text-xs font-medium transition-all duration-200 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed ${
         state === 'saved'
           ? 'border border-teal/30 bg-teal/10 text-teal'
@@ -56,22 +56,141 @@ function SaveButton({ state, onClick }: { state: SaveState; onClick: () => void 
 }
 
 export default function SettingsPage() {
+  const [apiKey, setApiKey] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [defaultNetwork, setDefaultNetwork] = useState('arbitrum-one');
   const [defaultSlippage, setDefaultSlippage] = useState('2.0');
+  
+  // Webhook State
+  const [webhookId, setWebhookId] = useState<string | null>(null);
   const [webhookUrl, setWebhookUrl] = useState('');
-  const [webhookSecret, setWebhookSecret] = useState('');
+  const [justCreatedSecret, setJustCreatedSecret] = useState<string | null>(null);
+
   const [profileSave, setProfileSave] = useState<SaveState>('idle');
   const [prefSave, setPrefSave] = useState<SaveState>('idle');
   const [webhookSave, setWebhookSave] = useState<SaveState>('idle');
 
-  function fakeSave(setter: (s: SaveState) => void) {
-    setter('saving');
-    setTimeout(() => {
-      setter('saved');
-      setTimeout(() => setter('idle'), 2000);
-    }, 700);
+  // Load API key and Webhook config on mount
+  useEffect(() => {
+    const key = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
+    setApiKey(key);
+    
+    // Load local storage preferences if any
+    try {
+      const storedName = localStorage.getItem('arbisim_display_name');
+      if (storedName) setDisplayName(storedName);
+      
+      const storedNetwork = localStorage.getItem('arbisim_default_network');
+      if (storedNetwork) setDefaultNetwork(storedNetwork);
+      
+      const storedSlippage = localStorage.getItem('arbisim_default_slippage');
+      if (storedSlippage) setDefaultSlippage(storedSlippage);
+    } catch {}
+
+    if (!key) return;
+
+    fetch(`${CF_WORKER_URL}/api/v1/webhooks`, {
+      headers: { 'X-API-Key': key },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.webhooks && data.webhooks.length > 0) {
+          const activeHook = data.webhooks[0];
+          setWebhookId(activeHook.id);
+          setWebhookUrl(activeHook.url);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function handleSaveProfile() {
+    setProfileSave('saving');
+    try {
+      localStorage.setItem('arbisim_display_name', displayName);
+      setTimeout(() => {
+        setProfileSave('saved');
+        setTimeout(() => setProfileSave('idle'), 2000);
+      }, 500);
+    } catch {
+      setProfileSave('idle');
+    }
   }
+
+  function handleSavePrefs() {
+    setPrefSave('saving');
+    try {
+      localStorage.setItem('arbisim_default_network', defaultNetwork);
+      localStorage.setItem('arbisim_default_slippage', defaultSlippage);
+      setTimeout(() => {
+        setPrefSave('saved');
+        setTimeout(() => setPrefSave('idle'), 2000);
+      }, 500);
+    } catch {
+      setPrefSave('idle');
+    }
+  }
+
+  const handleSaveWebhook = async () => {
+    if (!apiKey) {
+      alert('Configure your API key in the API Keys section first.');
+      return;
+    }
+    if (!webhookUrl.trim() || !webhookUrl.startsWith('http')) {
+      alert('Please enter a valid HTTP or HTTPS URL.');
+      return;
+    }
+
+    setWebhookSave('saving');
+    try {
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/webhooks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({ url: webhookUrl }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setWebhookId(data.id);
+        setWebhookUrl(data.url);
+        setJustCreatedSecret(data.secret);
+        setWebhookSave('saved');
+        setTimeout(() => setWebhookSave('idle'), 2000);
+      } else {
+        setWebhookSave('idle');
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error?.message ?? 'Failed to save webhook.');
+      }
+    } catch (err) {
+      setWebhookSave('idle');
+      alert('Failed to save webhook.');
+    }
+  };
+
+  const handleRemoveWebhook = async () => {
+    if (!apiKey || !webhookId) return;
+    if (!confirm('Are you sure you want to deactivate and remove this webhook endpoint?')) return;
+
+    try {
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/webhooks/${webhookId}`, {
+        method: 'DELETE',
+        headers: { 'X-API-Key': apiKey },
+      });
+
+      if (res.ok) {
+        setWebhookId(null);
+        setWebhookUrl('');
+        setJustCreatedSecret(null);
+        alert('Webhook removed successfully.');
+      } else {
+        alert('Failed to remove webhook.');
+      }
+    } catch (err) {
+      alert('Failed to remove webhook.');
+    }
+  };
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -105,7 +224,7 @@ export default function SettingsPage() {
                 />
               </Field>
               <div className="flex justify-end">
-                <SaveButton state={profileSave} onClick={() => fakeSave(setProfileSave)} />
+                <SaveButton state={profileSave} onClick={handleSaveProfile} />
               </div>
             </Section>
 
@@ -135,7 +254,7 @@ export default function SettingsPage() {
                 />
               </Field>
               <div className="flex justify-end">
-                <SaveButton state={prefSave} onClick={() => fakeSave(setPrefSave)} />
+                <SaveButton state={prefSave} onClick={handleSavePrefs} />
               </div>
             </Section>
 
@@ -143,33 +262,63 @@ export default function SettingsPage() {
             <Section
               title="Webhook endpoint"
               description="Receive simulation results as webhook events instead of polling. HMAC-SHA256 signed with your secret.">
-              <div className="px-4 py-3 rounded-lg bg-amber/5 border border-amber/20 mb-2">
-                <p className="text-xs text-amber-300">
-                  <span className="font-semibold">Coming soon — Pro plan.</span> Webhooks eliminate polling and are the recommended integration pattern for production agents.
-                </p>
-              </div>
+              
+              {justCreatedSecret && (
+                <div className="rounded-lg border border-teal/30 bg-teal/5 p-4 mb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-2 h-2 rounded-full bg-teal animate-pulse" />
+                    <span className="text-xs font-semibold text-text-primary">Webhook registered successfully</span>
+                  </div>
+                  <p className="text-[10px] text-text-tertiary mb-3">Copy your signing secret. It will not be shown again.</p>
+                  <div className="flex items-center gap-3 px-3 py-2 rounded border border-border bg-surface font-mono text-xs text-text-primary">
+                    <span className="flex-1 break-all">{justCreatedSecret}</span>
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(justCreatedSecret);
+                        alert('Secret copied to clipboard');
+                      }}
+                      className="text-[10px] px-2 py-1 border border-border bg-elevated text-text-tertiary rounded hover:text-text-primary transition-colors"
+                    >
+                      copy
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <Field label="Webhook URL" hint="ArbiSim Guard will POST simulation results to this endpoint.">
                 <input
                   type="url"
                   value={webhookUrl}
                   onChange={e => setWebhookUrl(e.target.value)}
                   placeholder="https://your-agent.example.com/hooks/arbisim"
-                  disabled
-                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-elevated text-text-primary text-sm placeholder:text-text-tertiary opacity-50 cursor-not-allowed"
+                  disabled={webhookId !== null}
+                  className={`w-full px-4 py-2.5 rounded-lg border border-border bg-elevated text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors ${
+                    webhookId !== null ? 'opacity-70 cursor-not-allowed bg-surface' : ''
+                  }`}
                 />
               </Field>
+              
               <Field label="Signing secret" hint="Used to verify the X-ArbiSim-Signature header on incoming payloads.">
                 <input
                   type="password"
-                  value={webhookSecret}
-                  onChange={e => setWebhookSecret(e.target.value)}
+                  value={webhookId !== null ? '••••••••••••••••••••••••••••••••' : ''}
                   placeholder="whsec_••••••••"
                   disabled
-                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-elevated text-text-primary font-mono text-sm placeholder:text-text-tertiary opacity-50 cursor-not-allowed"
+                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-elevated text-text-primary font-mono text-sm placeholder:text-text-tertiary opacity-70 cursor-not-allowed bg-surface"
                 />
               </Field>
-              <div className="flex justify-end">
-                <SaveButton state={webhookSave} onClick={() => fakeSave(setWebhookSave)} />
+
+              <div className="flex justify-end gap-3">
+                {webhookId !== null ? (
+                  <button
+                    onClick={handleRemoveWebhook}
+                    className="px-4 py-2 border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10 rounded-lg text-xs font-medium transition-all duration-200 active:scale-[0.98]"
+                  >
+                    Remove Webhook
+                  </button>
+                ) : (
+                  <SaveButton state={webhookSave} onClick={handleSaveWebhook} />
+                )}
               </div>
             </Section>
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import Link from 'next/link';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -317,6 +318,18 @@ export default function DashboardPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* Explorer deep-link */}
+                    {result.sessionId && (
+                      <div className="px-6 pb-4">
+                        <Link
+                          href={`/dashboard/simulate/${result.sessionId}`}
+                          className="inline-flex items-center gap-1.5 text-xs font-mono text-coral hover:text-coral-hover transition-colors"
+                        >
+                          View full explorer →
+                        </Link>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

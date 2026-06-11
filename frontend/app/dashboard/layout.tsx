@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+
+const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
 const NAV_ITEMS = [
   {
@@ -26,6 +29,34 @@ const NAV_ITEMS = [
       </svg>
     ),
     badge: 'live',
+  },
+  {
+    href: '/dashboard/logs',
+    label: 'Logs',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M2 3h12M2 8h12M2 13h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    href: '/dashboard/backtest',
+    label: 'Backtest',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <polyline points="1,12 4,5 7,9 10,3 13,7 15,4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      </svg>
+    ),
+  },
+  {
+    href: '/dashboard/mcp-playground',
+    label: 'MCP Playground',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M1 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M9 12h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
   },
   {
     href: '/dashboard/api-keys',
@@ -59,8 +90,39 @@ const NAV_ITEMS = [
   },
 ];
 
+function useQuotaAlert() {
+  const [alert, setAlert] = useState<{ level: 'warn' | 'critical' | null; pct: number }>({ level: null, pct: 0 });
+
+  useEffect(() => {
+    const dismissed = sessionStorage.getItem('arbisim_quota_alert_dismissed');
+    if (dismissed) return;
+
+    const key = localStorage.getItem('arbisim_api_key') ?? '';
+    if (!key) return;
+
+    fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { quota_used?: number; quota_limit?: number } | null) => {
+        if (!data?.quota_limit) return;
+        const pct = Math.round((data.quota_used ?? 0) / data.quota_limit * 100);
+        if (pct >= 100) setAlert({ level: 'critical', pct });
+        else if (pct >= 80) setAlert({ level: 'warn', pct });
+      })
+      .catch(() => {});
+  }, []);
+
+  return alert;
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const quotaAlert = useQuotaAlert();
+  const [alertDismissed, setAlertDismissed] = useState(false);
+
+  function dismissAlert() {
+    sessionStorage.setItem('arbisim_quota_alert_dismissed', '1');
+    setAlertDismissed(true);
+  }
 
   function isActive(href: string) {
     if (href === '/dashboard') return pathname === '/dashboard';
@@ -68,7 +130,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen bg-base flex flex-col md:flex-row">
+    <div className="min-h-screen bg-base flex flex-col">
+      {/* Quota alert banner */}
+      {!alertDismissed && quotaAlert.level && (
+        <div className={`flex items-center justify-between px-5 py-2.5 text-xs font-medium ${
+          quotaAlert.level === 'critical'
+            ? 'bg-danger/10 border-b border-danger/30 text-danger'
+            : 'bg-amber/10 border-b border-amber/30 text-amber'
+        }`}>
+          <span>
+            {quotaAlert.level === 'critical'
+              ? 'Monthly quota exhausted. All simulation requests are being rejected until reset.'
+              : `You've used ${quotaAlert.pct}% of your monthly quota. Upgrade to Pro to get 10,000 simulations.`}
+          </span>
+          <button onClick={dismissAlert} className="ml-4 shrink-0 opacity-70 hover:opacity-100 transition-opacity">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row flex-1">
       {/* Sidebar */}
       <aside className="w-full md:w-60 border-r border-border bg-surface shrink-0 flex flex-col md:sticky md:top-0 md:h-screen">
         {/* Logo */}
@@ -131,6 +214,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="flex-1 flex flex-col min-h-screen overflow-y-auto">
         {children}
       </main>
+      </div>
     </div>
   );
 }

@@ -33,12 +33,13 @@ def find_free_port(start: int = 8545, end: int = 8600) -> int:
     raise IOError(f"No free ports available in range {start}-{end}")
 
 class AnvilForkInstance:
-    def __init__(self, network: str):
+    def __init__(self, network: str, block_number: int | None = None):
         if network not in CHAIN_IDS:
             raise ValueError(f"Unsupported network: {network}")
             
         self.network = network
         self.chain_id = CHAIN_IDS[network]
+        self.block_number = block_number
         
         # Determine RPC URL
         env_var_name = f"{network.upper().replace('-', '_')}_RPC"
@@ -63,8 +64,12 @@ class AnvilForkInstance:
             # Prevents Anvil from printing standard startup banner to speed up launch
             "--silent"
         ]
+
+        if self.block_number is not None:
+            cmd.extend(["--fork-block-number", str(self.block_number)])
         
-        print(f"Starting Anvil fork for {self.network} (Chain ID: {self.chain_id}) on port {self.port}...")
+        block_msg = f" at block {self.block_number}" if self.block_number is not None else ""
+        print(f"Starting Anvil fork for {self.network}{block_msg} (Chain ID: {self.chain_id}) on port {self.port}...")
         print(f"Command: {' '.join(cmd)}")
         
         # Spawn Anvil subprocess

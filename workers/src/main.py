@@ -8,6 +8,8 @@ from simulation_engine import AnvilForkInstance
 from analytical_brain import AnalyticalBrain
 from storage import save_telemetry
 from chain_registry import log_simulation_to_chain
+from backtest_runner import run_backtest
+from webhook_delivery import deliver_webhook
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
 
@@ -61,6 +63,26 @@ async def setup_db_tables() -> None:
             await conn.execute(col_sql)
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS simq_status_idx ON simulation_queue (status, created_at ASC)"
+        )
+        # ── Backtests table (mirrors gateway/src/db.ts schema) ─────────────
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS backtests (
+                id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                api_key_id      TEXT,
+                network         VARCHAR(50) NOT NULL,
+                agent_address   VARCHAR(42) NOT NULL,
+                strategy        JSONB NOT NULL,
+                block_start     BIGINT NOT NULL,
+                block_end       BIGINT NOT NULL,
+                block_stride    INTEGER NOT NULL DEFAULT 100,
+                status          VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                results         JSONB,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS bt_status_idx ON backtests (status, created_at ASC)"
         )
     print("PostgreSQL tables checked/created.")
 
@@ -123,7 +145,75 @@ async def reclaim_stale_jobs() -> None:
         """)
     reclaimed = int(result.split()[-1])
     if reclaimed:
-        print(f"Reclaimed {reclaimed} stale job(s).")
+        print(f"Reclaimed {reclaimed} stale simulation job(s).")
+
+
+# ── Backtest job processing ─────────────────────────────────────────────────
+
+async def poll_and_claim_backtest() -> dict | None:
+    """Atomically claim the next PENDING backtest using FOR UPDATE SKIP LOCKED."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow("""
+                UPDATE backtests
+                SET status = 'RUNNING',
+                    updated_at = NOW()
+                WHERE id = (
+                    SELECT id FROM backtests
+                    WHERE status = 'PENDING'
+                    ORDER BY created_at ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                RETURNING *
+            """,)
+            return dict(row) if row else None
+
+
+async def update_backtest(backtest_id: str, status: str, results: dict | None = None) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if results is not None:
+            await conn.execute("""
+                UPDATE backtests
+                SET status = $1, results = $2, updated_at = NOW()
+                WHERE id = $3
+            """, status, json.dumps(results), backtest_id)
+        else:
+            await conn.execute("""
+                UPDATE backtests
+                SET status = $1, updated_at = NOW()
+                WHERE id = $2
+            """, status, backtest_id)
+    print(f"Backtest {backtest_id} → {status}")
+
+
+async def reclaim_stale_backtests() -> None:
+    """Reset RUNNING backtests older than 30 minutes back to PENDING."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute("""
+            UPDATE backtests
+            SET status = 'PENDING', updated_at = NOW()
+            WHERE status = 'RUNNING'
+              AND updated_at < NOW() - INTERVAL '30 minutes'
+        """)
+    reclaimed = int(result.split()[-1])
+    if reclaimed:
+        print(f"Reclaimed {reclaimed} stale backtest(s).")
+
+
+async def process_backtest(record: dict) -> None:
+    backtest_id = str(record["id"])
+    print(f"\n[BT-{backtest_id[:8]}] Starting backtest: blocks {record['block_start']}..{record['block_end']} stride {record['block_stride']}")
+
+    try:
+        results = await run_backtest(record)
+        await update_backtest(backtest_id, "COMPLETED", results)
+    except Exception as err:
+        print(f"[BT-{backtest_id[:8]}] Exception: {err}")
+        await update_backtest(backtest_id, "FAILED", {"error": str(err)})
 
 
 async def process_job(job: dict) -> None:
@@ -199,6 +289,10 @@ async def process_job(job: dict) -> None:
         await update_simulation(session_id, results["status"], results)
         await mark_job_done(job["id"], "COMPLETED")
 
+        # Deliver webhook asynchronously
+        pool = await get_pool()
+        await deliver_webhook(session_id, results["status"], results, pool)
+
         # Write verdict to SimulationRegistry.sol on Arbitrum Sepolia (non-blocking)
         await log_simulation_to_chain(session_id, results)
 
@@ -218,6 +312,11 @@ async def process_job(job: dict) -> None:
         }
         await update_simulation(session_id, "REJECTED", err_telemetry)
         await mark_job_done(job["id"], "FAILED")
+        
+        # Deliver webhook on failure/rejection
+        pool = await get_pool()
+        await deliver_webhook(session_id, "REJECTED", err_telemetry, pool)
+
         try:
             await save_telemetry(
                 session_id=session_id,
@@ -242,16 +341,23 @@ async def main_loop() -> None:
 
     reclaim_tick = 0
     while True:
+        # Try to claim a simulation job first
         job = await poll_and_claim_job()
         if job:
             await process_job(job)
         else:
-            await asyncio.sleep(1.0)
+            # No simulation job — try to claim a backtest job
+            bt = await poll_and_claim_backtest()
+            if bt:
+                await process_backtest(bt)
+            else:
+                await asyncio.sleep(1.0)
 
         # Reclaim stale jobs every 60 seconds
         reclaim_tick += 1
         if reclaim_tick >= 60:
             await reclaim_stale_jobs()
+            await reclaim_stale_backtests()
             reclaim_tick = 0
 
 
