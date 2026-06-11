@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ethers } from 'ethers';
 import { getSimulation, getMongoDb, updateSimulationStatusAndTelemetry, pgPool, listSimulations } from './db.js';
 import { submitSimulationJob } from './queue.js';
+import { MCP_TOOLS, callMcpTool } from './mcp-tools.js';
 
 export const router = Router();
 
@@ -454,6 +455,41 @@ router.post('/validate-userop', async (req: Request, res: Response): Promise<voi
       await provider.send('anvil_stopImpersonatingAccount', [entryPointAddress]);
     } catch (e) {}
   }
+});
+
+// ── MCP HTTP Bridge ─────────────────────────────────────────────────────────
+// POST /api/v1/mcp — JSON-RPC 2.0 over HTTP for the in-browser MCP playground.
+// Handles tools/list and tools/call. Auth via requireAuth (applied at mount point).
+router.post('/mcp', async (req: Request, res: Response): Promise<void> => {
+  const { jsonrpc, id, method, params } = req.body ?? {};
+
+  if (jsonrpc !== '2.0' || !method) {
+    res.status(400).json({ jsonrpc: '2.0', id: id ?? null, error: { code: -32600, message: 'Invalid JSON-RPC request' } });
+    return;
+  }
+
+  if (method === 'tools/list') {
+    res.json({ jsonrpc: '2.0', id, result: { tools: MCP_TOOLS } });
+    return;
+  }
+
+  if (method === 'tools/call') {
+    const { name, arguments: args } = (params ?? {}) as { name?: string; arguments?: Record<string, unknown> };
+    if (!name) {
+      res.status(400).json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'params.name is required' } });
+      return;
+    }
+    const apiKeyId = (req as any).apiKeyId as string | undefined;
+    const { result, error } = await callMcpTool(name, args ?? {}, apiKeyId);
+    if (error) {
+      res.json({ jsonrpc: '2.0', id, error });
+      return;
+    }
+    res.json({ jsonrpc: '2.0', id, result });
+    return;
+  }
+
+  res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } });
 });
 
 // ── Public (unauthenticated) routes ─────────────────────────────────────────

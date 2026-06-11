@@ -1,13 +1,52 @@
+'use client';
+
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+
+const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+
+const TIER_LIMITS: Record<string, { monthly: number; label: string }> = {
+  free:       { monthly: 500,    label: 'Free' },
+  pro:        { monthly: 10000,  label: 'Pro' },
+  enterprise: { monthly: 100000, label: 'Enterprise' },
+};
+
+function parseTierFromKey(key: string): string {
+  const match = key.match(/^ask_([a-z]+)_/);
+  return match?.[1] ?? 'free';
+}
+
+function useBillingStats() {
+  const [quotaUsed, setQuotaUsed] = useState(0);
+  const [quotaLimit, setQuotaLimit] = useState(500);
+  const [tier, setTier] = useState('free');
+
+  useEffect(() => {
+    const key = localStorage.getItem('arbisim_api_key') ?? '';
+    if (key) setTier(parseTierFromKey(key));
+    if (!key) return;
+
+    fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { quota_used?: number; quota_limit?: number } | null) => {
+        if (!data) return;
+        setQuotaUsed(data.quota_used ?? 0);
+        setQuotaLimit(data.quota_limit ?? 500);
+      })
+      .catch(() => {});
+  }, []);
+
+  return { quotaUsed, quotaLimit, tier };
+}
 
 const PLANS = [
   {
+    key: 'free',
     name: 'Free',
     price: '$0',
     period: '/month',
     monthly: 500,
     perMin: 10,
-    current: true,
     features: [
       'All 8 safety flags',
       'Arbitrum L1+L2 gas breakdown',
@@ -18,38 +57,40 @@ const PLANS = [
       'Community support',
     ],
     cta: 'Current plan',
+    ctaDisabled: true,
     ctaStyle: 'border border-border text-text-secondary cursor-default',
   },
   {
+    key: 'pro',
     name: 'Pro',
     price: '$29',
     period: '/month',
     monthly: 10000,
     perMin: 60,
-    current: false,
     highlighted: true,
     features: [
       'Everything in Free',
       'Priority simulation queue',
       'Simulation history & explorer',
       'Shareable simulation receipts',
-      'Backtesting suite (coming soon)',
+      'Backtesting suite',
       'Timeboost premium analysis',
+      'Webhook callbacks',
       'Email support',
     ],
     cta: 'Upgrade to Pro',
+    ctaDisabled: false,
     ctaStyle: 'bg-coral text-white hover:bg-coral-hover shadow-lg shadow-coral/20',
   },
   {
+    key: 'enterprise',
     name: 'Enterprise',
     price: '$299',
     period: '/month',
     monthly: 100000,
     perMin: 300,
-    current: false,
     features: [
       'Everything in Pro',
-      'Webhook callbacks',
       'Custom rate limits',
       'Team / org management',
       'SLA guarantee',
@@ -57,16 +98,17 @@ const PLANS = [
       'Custom integrations',
     ],
     cta: 'Contact us',
+    ctaDisabled: false,
     ctaStyle: 'border border-border text-text-primary hover:bg-elevated',
   },
 ];
 
-const USAGE_ITEMS = [
-  { label: 'Simulations used',    value: 0,   limit: 500,  unit: '' },
-  { label: 'API calls (per min)', value: 0,   limit: 10,   unit: '' },
-];
-
 export default function BillingPage() {
+  const { quotaUsed, quotaLimit, tier } = useBillingStats();
+  const tierInfo = TIER_LIMITS[tier] ?? TIER_LIMITS['free'];
+  const pct = Math.min(100, quotaLimit > 0 ? (quotaUsed / quotaLimit) * 100 : 0);
+  const quotaWarning = pct > 80;
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Header */}
@@ -85,8 +127,8 @@ export default function BillingPage() {
             <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-4">Current plan</p>
             <div className="flex items-start justify-between mb-4">
               <div>
-                <p className="text-2xl font-semibold text-text-primary">Free</p>
-                <p className="text-sm text-text-secondary mt-0.5">$0 / month</p>
+                <p className="text-2xl font-semibold text-text-primary">{tierInfo.label}</p>
+                <p className="text-sm text-text-secondary mt-0.5">{PLANS.find(p => p.key === tier)?.price ?? '$0'} / month</p>
               </div>
               <span className="px-2.5 py-1 rounded border border-teal/30 bg-teal/5 text-xs font-mono text-teal">active</span>
             </div>
@@ -103,26 +145,20 @@ export default function BillingPage() {
           <div className="rounded-xl border border-border bg-surface p-6">
             <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-4">This month&apos;s usage</p>
             <div className="space-y-4">
-              {USAGE_ITEMS.map(item => {
-                const pct = Math.min(100, (item.value / item.limit) * 100);
-                const warning = pct > 80;
-                return (
-                  <div key={item.label}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs text-text-secondary">{item.label}</span>
-                      <span className={`text-xs font-mono ${warning ? 'text-amber' : 'text-text-tertiary'}`}>
-                        {item.value.toLocaleString()} / {item.limit.toLocaleString()}{item.unit}
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 rounded-full bg-elevated border border-border overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${warning ? 'bg-amber' : 'bg-coral/60'}`}
-                        style={{ width: `${Math.max(2, pct)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-text-secondary">Simulations used</span>
+                  <span className={`text-xs font-mono ${quotaWarning ? 'text-amber' : 'text-text-tertiary'}`}>
+                    {quotaUsed.toLocaleString()} / {quotaLimit.toLocaleString()}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-elevated border border-border overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${quotaWarning ? 'bg-amber' : 'bg-coral/60'}`}
+                    style={{ width: `${Math.max(pct > 0 ? 2 : 0, pct)}%` }}
+                  />
+                </div>
+              </div>
             </div>
             <p className="text-xs text-text-tertiary mt-4">
               Usage resets on the 1st of each month.
@@ -134,45 +170,50 @@ export default function BillingPage() {
         <div>
           <h2 className="text-sm font-semibold text-text-primary mb-4">Plans</h2>
           <div className="grid md:grid-cols-3 gap-4">
-            {PLANS.map(plan => (
-              <div key={plan.name}
-                className={`rounded-xl border p-6 flex flex-col gap-5 transition-all duration-300 ${
-                  plan.highlighted
-                    ? 'border-coral/30 bg-gradient-to-b from-coral/5 to-surface'
-                    : 'border-border bg-surface'
-                }`}>
-                {plan.highlighted && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-mono text-coral bg-coral/10 border border-coral/20 px-2 py-0.5 rounded">Most popular</span>
+            {PLANS.map(plan => {
+              const isCurrent = plan.key === tier;
+              return (
+                <div key={plan.name}
+                  className={`rounded-xl border p-6 flex flex-col gap-5 transition-all duration-300 ${
+                    plan.highlighted
+                      ? 'border-coral/30 bg-gradient-to-b from-coral/5 to-surface'
+                      : 'border-border bg-surface'
+                  }`}>
+                  {plan.highlighted && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono text-coral bg-coral/10 border border-coral/20 px-2 py-0.5 rounded">Most popular</span>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-2">{plan.name}</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-semibold text-text-primary">{plan.price}</span>
+                      <span className="text-sm text-text-tertiary">{plan.period}</span>
+                    </div>
+                    <p className="text-xs text-text-secondary mt-1.5 font-mono">
+                      {plan.monthly.toLocaleString()} sims/month · {plan.perMin}/min
+                    </p>
                   </div>
-                )}
-                <div>
-                  <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-2">{plan.name}</p>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-semibold text-text-primary">{plan.price}</span>
-                    <span className="text-sm text-text-tertiary">{plan.period}</span>
-                  </div>
-                  <p className="text-xs text-text-secondary mt-1.5 font-mono">
-                    {plan.monthly.toLocaleString()} sims/month · {plan.perMin}/min
-                  </p>
+
+                  <ul className="space-y-2 flex-1">
+                    {plan.features.map(f => (
+                      <li key={f} className="flex items-start gap-2 text-xs text-text-secondary">
+                        <span className="text-teal mt-0.5 shrink-0">✓</span>
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <button
+                    disabled={isCurrent}
+                    className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-[0.98] disabled:opacity-70 disabled:cursor-default ${
+                      isCurrent ? 'border border-border text-text-secondary cursor-default' : plan.ctaStyle
+                    }`}>
+                    {isCurrent ? 'Current plan' : plan.cta}
+                  </button>
                 </div>
-
-                <ul className="space-y-2 flex-1">
-                  {plan.features.map(f => (
-                    <li key={f} className="flex items-start gap-2 text-xs text-text-secondary">
-                      <span className="text-teal mt-0.5 shrink-0">✓</span>
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <button
-                  disabled={plan.current}
-                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-[0.98] disabled:opacity-70 disabled:cursor-default ${plan.ctaStyle}`}>
-                  {plan.cta}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
