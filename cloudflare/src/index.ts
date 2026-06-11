@@ -2,6 +2,7 @@ export interface Env {
   API_KEYS: KVNamespace;
   GATEWAY_URL: string;
   RATE_LIMIT_WINDOW_SECONDS: string;
+  ADMIN_API_KEY: string;
 }
 
 interface ApiKeyRecord {
@@ -27,7 +28,7 @@ async function sha256(text: string): Promise<string> {
 function corsHeaders(origin: string | null): HeadersInit {
   return {
     'Access-Control-Allow-Origin': origin ?? '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization',
     'Access-Control-Max-Age': '86400',
   };
@@ -63,6 +64,35 @@ export default {
 
     if (!rawKey) {
       return jsonError(401, 'MISSING_API_KEY', 'Provide your API key via X-API-Key header.', origin);
+    }
+
+    // ── Admin routes: validate against ADMIN_API_KEY secret, bypass KV ───────
+    if (url.pathname.startsWith('/admin/') || url.pathname === '/admin') {
+      if (!env.ADMIN_API_KEY || rawKey !== env.ADMIN_API_KEY) {
+        return jsonError(403, 'FORBIDDEN', 'Invalid admin key.', origin);
+      }
+      const adminTarget = env.GATEWAY_URL.replace(/\/$/, '') + url.pathname + url.search;
+      const adminProxy = new Request(adminTarget, {
+        method: request.method,
+        headers: {
+          ...Object.fromEntries(request.headers.entries()),
+          'X-ArbiSim-Tier': 'admin',
+        },
+        body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : null,
+      });
+      try {
+        const adminResp = await fetch(adminProxy);
+        const adminBody = await adminResp.arrayBuffer();
+        return new Response(adminBody, {
+          status: adminResp.status,
+          headers: {
+            'Content-Type': adminResp.headers.get('Content-Type') ?? 'application/json',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch {
+        return jsonError(502, 'GATEWAY_ERROR', 'Gateway unreachable.', origin);
+      }
     }
 
     const keyHash = await sha256(rawKey);
