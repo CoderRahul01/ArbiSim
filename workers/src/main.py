@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from simulation_engine import AnvilForkInstance
 from analytical_brain import AnalyticalBrain
 from storage import save_telemetry
+from chain_registry import log_simulation_to_chain
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
 
@@ -197,6 +198,9 @@ async def process_job(job: dict) -> None:
         # Update Neon state — results["status"] is already APPROVED or REJECTED
         await update_simulation(session_id, results["status"], results)
         await mark_job_done(job["id"], "COMPLETED")
+
+        # Write verdict to SimulationRegistry.sol on Arbitrum Sepolia (non-blocking)
+        await log_simulation_to_chain(session_id, results)
 
     except Exception as err:
         print(f"[{session_id}] Exception: {err}")
