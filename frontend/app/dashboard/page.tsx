@@ -26,9 +26,8 @@ function useLiveStats(): LiveStats {
   });
 
   useEffect(() => {
-    const key = typeof window !== 'undefined'
-      ? (localStorage.getItem('arbisim_api_key') || '').trim().replace(/[^\x20-\x7E]/g, '')
-      : '';
+    const raw = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
+    const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
     if (!key) return;
 
     fetch(`${CF_WORKER_URL}/api/v1/stats`, {
@@ -46,9 +45,8 @@ function useAnalytics(): AnalyticsData | null {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
 
   useEffect(() => {
-    const key = typeof window !== 'undefined'
-      ? (localStorage.getItem('arbisim_api_key') || '').trim().replace(/[^\x20-\x7E]/g, '')
-      : '';
+    const raw = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
+    const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
     if (!key) return;
 
     fetch(`${CF_WORKER_URL}/api/v1/analytics?period=30d`, {
@@ -62,14 +60,13 @@ function useAnalytics(): AnalyticsData | null {
   return analytics;
 }
 
-const CHECKLIST = [
+const CHECKLIST_ITEMS = [
   {
     step: '01',
     title: 'Get your API key',
     description: 'Create a free API key to authenticate simulations from your agent or CLI.',
     href: '/dashboard/api-keys',
     cta: 'Create key →',
-    done: false,
   },
   {
     step: '02',
@@ -77,7 +74,6 @@ const CHECKLIST = [
     description: 'Paste a transaction payload and click Run — get an APPROVED or REJECTED verdict in seconds.',
     href: '/dashboard/simulate',
     cta: 'Open playground →',
-    done: false,
   },
   {
     step: '03',
@@ -85,7 +81,6 @@ const CHECKLIST = [
     description: 'Call preflight_simulate from Vibekit, Eliza, or LangGraph, or hit the REST endpoint directly.',
     href: 'https://github.com/arbisim-guard/docs',
     cta: 'View docs →',
-    done: false,
     external: true,
   },
 ];
@@ -100,6 +95,17 @@ const NETWORK_STATUS = [
 export default function DashboardOverview() {
   const stats = useLiveStats();
   const analytics = useAnalytics();
+  const [hasApiKey, setHasApiKey] = useState(false);
+
+  useEffect(() => {
+    setHasApiKey(!!localStorage.getItem('arbisim_api_key'));
+  }, []);
+
+  const CHECKLIST = CHECKLIST_ITEMS.map((item, i) => ({
+    ...item,
+    done: i === 0 ? hasApiKey : i === 1 ? stats.month > 0 : false,
+  }));
+  const completedCount = CHECKLIST.filter(c => c.done).length;
 
   const statCards = [
     {
@@ -358,7 +364,7 @@ export default function DashboardOverview() {
           <div className="md:col-span-2 rounded-xl border border-border bg-surface overflow-hidden">
             <div className="px-6 py-4 border-b border-border flex items-center justify-between">
               <h2 className="text-sm font-semibold text-text-primary">Get started</h2>
-              <span className="text-xs font-mono text-text-tertiary">0 / 3 complete</span>
+              <span className="text-xs font-mono text-text-tertiary">{completedCount} / 3 complete</span>
             </div>
             <div className="divide-y divide-border">
               {CHECKLIST.map((item, i) => (

@@ -133,10 +133,10 @@ export default function SimulationExplorerPage() {
   const [showTraces, setShowTraces] = useState(false);
   const [apiKey, setApiKey] = useState('');
 
-  // Try to get API key from localStorage
+  // Try to get API key from localStorage (sanitized)
   useEffect(() => {
-    const stored = localStorage.getItem('arbisim_api_key');
-    if (stored) setApiKey(stored.trim().replace(/[^\x20-\x7E]/g, ''));
+    const stored = localStorage.getItem('arbisim_api_key') || '';
+    setApiKey(stored.trim().replace(/[^\x20-\x7E]/g, ''));
   }, []);
 
   useEffect(() => {
@@ -178,9 +178,9 @@ export default function SimulationExplorerPage() {
             type="text"
             placeholder="ask_free_••••••••••••"
             onChange={e => {
-              const val = e.target.value.replace(/[^\x20-\x7E]/g, '');
-              setApiKey(val);
-              localStorage.setItem('arbisim_api_key', val);
+              const s = e.target.value.replace(/[^\x20-\x7E]/g, '');
+              setApiKey(s);
+              localStorage.setItem('arbisim_api_key', s);
             }}
             className="w-full px-4 py-3 rounded-lg border border-border bg-surface text-text-primary font-mono text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors"
           />

@@ -27,23 +27,9 @@ function useBillingStats() {
   const [tier, setTier] = useState('free');
 
   useEffect(() => {
-    // 1. Fetch current user tier from auth/billing endpoint
-    const token = localStorage.getItem('arbisim_jwt');
-    if (token) {
-      fetch(`${CF_WORKER_URL}/api/v1/billing/tier`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-        .then(r => r.ok ? r.json() : null)
-        .then((data: { tier: string } | null) => {
-          if (data?.tier) {
-            setTier(dbTierToUiTier(data.tier));
-          }
-        })
-        .catch(() => {});
-    }
-
-    // 2. Fetch monthly stats
-    const key = (localStorage.getItem('arbisim_api_key') ?? '').trim().replace(/[^\x20-\x7E]/g, '');
+    const raw = localStorage.getItem('arbisim_api_key') ?? '';
+    const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
+    if (key) setTier(parseTierFromKey(key));
     if (!key) return;
 
     fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
