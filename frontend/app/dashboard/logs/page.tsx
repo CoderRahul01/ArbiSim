@@ -80,8 +80,8 @@ export default function LogsPage() {
   const limit = 20;
 
   useEffect(() => {
-    const key = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
-    setApiKey(key);
+    const raw = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
+    setApiKey(raw.trim().replace(/[^\x20-\x7E]/g, ''));
   }, []);
 
   const fetchLogs = useCallback(async (currentOffset: number, clearExisting: boolean) => {

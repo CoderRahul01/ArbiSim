@@ -72,7 +72,8 @@ export default function SettingsPage() {
 
   // Load API key and Webhook config on mount
   useEffect(() => {
-    const key = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
+    const raw = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
+    const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
     setApiKey(key);
     
     // Load local storage preferences if any

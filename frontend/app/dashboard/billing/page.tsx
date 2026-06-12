@@ -22,7 +22,8 @@ function useBillingStats() {
   const [tier, setTier] = useState('free');
 
   useEffect(() => {
-    const key = localStorage.getItem('arbisim_api_key') ?? '';
+    const raw = localStorage.getItem('arbisim_api_key') ?? '';
+    const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
     if (key) setTier(parseTierFromKey(key));
     if (!key) return;
 

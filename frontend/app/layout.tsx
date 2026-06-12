@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
+import { headers } from 'next/headers';
+import { cookieToInitialState } from '@wagmi/core';
 import './globals.css';
 import Providers from './Providers';
+import { wagmiConfig } from '@/lib/wagmi/config';
 
 // Sans: Geist is the "new cool for developer tools" (Vercel).
 // Inter is the fallback — tall x-height, still the king of UI.
@@ -51,7 +54,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const initialState = cookieToInitialState(wagmiConfig, (await headers()).get('cookie'));
   return (
     <html
       lang="en"
@@ -59,7 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <body style={{ fontFamily: 'var(--font-sans, system-ui, sans-serif)' }}>
-        <Providers>{children}</Providers>
+        <Providers initialState={initialState}>{children}</Providers>
       </body>
     </html>
   );

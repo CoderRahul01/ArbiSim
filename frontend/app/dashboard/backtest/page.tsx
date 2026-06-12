@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { useAccount } from 'wagmi';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -96,6 +97,21 @@ export default function BacktestPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BacktestRecord | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const { address } = useAccount();
+
+  // Load API key from localStorage on mount (sanitized)
+  useEffect(() => {
+    const stored = localStorage.getItem('arbisim_api_key') || '';
+    setApiKey(stored.trim().replace(/[^\x20-\x7E]/g, ''));
+  }, []);
+
+  // Auto-populate agent address from connected wallet (only replaces placeholder)
+  useEffect(() => {
+    if (!address) return;
+    setAgentAddress(prev =>
+      prev === '0x0000000000000000000000000000000000000001' ? address : prev
+    );
+  }, [address]);
 
   // Clean up polling on unmount
   useEffect(() => {
@@ -105,7 +121,8 @@ export default function BacktestPage() {
   }, []);
 
   const submit = useCallback(async () => {
-    if (!apiKey.trim()) { alert('Enter your API key.'); return; }
+    const cleanKey = apiKey.trim().replace(/[^\x20-\x7E]/g, '');
+    if (!cleanKey) { alert('Enter your API key.'); return; }
 
     let parsedStrategy: unknown;
     try {
@@ -121,7 +138,7 @@ export default function BacktestPage() {
     try {
       const res = await fetch(`${CF_WORKER_URL}/api/v1/backtest`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': cleanKey },
         body: JSON.stringify({
           network,
           agent_address: agentAddress,
@@ -146,7 +163,7 @@ export default function BacktestPage() {
       pollRef.current = setInterval(async () => {
         try {
           const poll = await fetch(`${CF_WORKER_URL}/api/v1/backtest/${data.backtest_id}`, {
-            headers: { 'X-API-Key': apiKey },
+            headers: { 'X-API-Key': cleanKey },
           });
           if (!poll.ok) return;
           const pollData = await poll.json() as BacktestRecord;
@@ -190,7 +207,11 @@ export default function BacktestPage() {
               <input
                 type="text"
                 value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
+                onChange={e => {
+                  const sanitized = e.target.value.replace(/[^\x20-\x7E]/g, '');
+                  setApiKey(sanitized);
+                  localStorage.setItem('arbisim_api_key', sanitized);
+                }}
                 placeholder="ask_free_••••••••••••"
                 className="w-full px-4 py-3 rounded-lg border border-border bg-surface text-text-primary font-mono text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors"
               />

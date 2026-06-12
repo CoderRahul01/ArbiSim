@@ -90,34 +90,51 @@ const NAV_ITEMS = [
   },
 ];
 
-function useQuotaAlert() {
-  const [alert, setAlert] = useState<{ level: 'warn' | 'critical' | null; pct: number }>({ level: null, pct: 0 });
+interface QuotaStats {
+  level: 'warn' | 'critical' | null;
+  pct: number;
+  used: number;
+  limit: number;
+}
+
+function useQuotaStats(): QuotaStats {
+  const [stats, setStats] = useState<QuotaStats>({ level: null, pct: 0, used: 0, limit: 500 });
 
   useEffect(() => {
-    const dismissed = sessionStorage.getItem('arbisim_quota_alert_dismissed');
-    if (dismissed) return;
-
-    const key = localStorage.getItem('arbisim_api_key') ?? '';
+    const raw = localStorage.getItem('arbisim_api_key') ?? '';
+    const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
     if (!key) return;
 
     fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
       .then(r => r.ok ? r.json() : null)
       .then((data: { quota_used?: number; quota_limit?: number } | null) => {
         if (!data?.quota_limit) return;
-        const pct = Math.round((data.quota_used ?? 0) / data.quota_limit * 100);
-        if (pct >= 100) setAlert({ level: 'critical', pct });
-        else if (pct >= 80) setAlert({ level: 'warn', pct });
+        const used = data.quota_used ?? 0;
+        const limit = data.quota_limit;
+        const pct = Math.round(used / limit * 100);
+        setStats({
+          level: pct >= 100 ? 'critical' : pct >= 80 ? 'warn' : null,
+          pct,
+          used,
+          limit,
+        });
       })
       .catch(() => {});
   }, []);
 
-  return alert;
+  return stats;
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const quotaAlert = useQuotaAlert();
+  const quotaStats = useQuotaStats();
   const [alertDismissed, setAlertDismissed] = useState(false);
+
+  useEffect(() => {
+    if (sessionStorage.getItem('arbisim_quota_alert_dismissed')) {
+      setAlertDismissed(true);
+    }
+  }, []);
 
   function dismissAlert() {
     sessionStorage.setItem('arbisim_quota_alert_dismissed', '1');
@@ -132,16 +149,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-base flex flex-col">
       {/* Quota alert banner */}
-      {!alertDismissed && quotaAlert.level && (
+      {!alertDismissed && quotaStats.level && (
         <div className={`flex items-center justify-between px-5 py-2.5 text-xs font-medium ${
-          quotaAlert.level === 'critical'
+          quotaStats.level === 'critical'
             ? 'bg-danger/10 border-b border-danger/30 text-danger'
             : 'bg-amber/10 border-b border-amber/30 text-amber'
         }`}>
           <span>
-            {quotaAlert.level === 'critical'
+            {quotaStats.level === 'critical'
               ? 'Monthly quota exhausted. All simulation requests are being rejected until reset.'
-              : `You've used ${quotaAlert.pct}% of your monthly quota. Upgrade to Pro to get 10,000 simulations.`}
+              : `You've used ${quotaStats.pct}% of your monthly quota. Upgrade to Pro to get 10,000 simulations.`}
           </span>
           <button onClick={dismissAlert} className="ml-4 shrink-0 opacity-70 hover:opacity-100 transition-opacity">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -197,9 +214,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <appkit-button />
             </div>
             <div className="w-full bg-border rounded-full h-1.5 mt-2.5">
-              <div className="bg-coral h-1.5 rounded-full" style={{ width: '0%' }} />
+              <div
+                className={`h-1.5 rounded-full transition-all duration-500 ${quotaStats.pct >= 100 ? 'bg-danger' : quotaStats.pct >= 80 ? 'bg-amber' : 'bg-coral'}`}
+                style={{ width: `${Math.min(quotaStats.pct, 100)}%` }}
+              />
             </div>
-            <p className="text-xs text-text-tertiary mt-1.5">0 / 500 simulations</p>
+            <p className="text-xs text-text-tertiary mt-1.5">{quotaStats.used} / {quotaStats.limit} simulations</p>
           </div>
         </div>
       </aside>
