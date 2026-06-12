@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useSendTransaction, useAccount } from 'wagmi';
+import { useSendTransaction, useAccount, useSwitchChain } from 'wagmi';
 import { parseEther } from 'viem';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 const MERCHANT_ADDRESS = process.env.NEXT_PUBLIC_MERCHANT_ADDRESS ?? '0x4FE1137021102A860Ff374Db8fB13bA78A00f9dD';
+const TARGET_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARBITRUM_CHAIN_ID ?? '42161');
 
 const TIER_LIMITS: Record<string, { monthly: number; label: string }> = {
   free:       { monthly: 500,    label: 'Free' },
@@ -122,12 +123,85 @@ const PLANS = [
   },
 ];
 
+function loadOnmetaSdk(callback: () => void) {
+  if (typeof window === 'undefined') return;
+  if ((window as any).onMetaWidget) {
+    callback();
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = 'https://stg.platform.onmeta.in/onmeta-sdk.js';
+  script.async = true;
+  script.onload = () => callback();
+  document.head.appendChild(script);
+}
+
 export default function BillingPage() {
   const { quotaUsed, quotaLimit, tier } = useBillingStats();
   const { sendTransactionAsync } = useSendTransaction();
-  const { isConnected } = useAccount();
+  const { isConnected, address, chainId } = useAccount();
+  const { switchChain } = useSwitchChain();
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<{ type: 'idle' | 'signing' | 'confirming' | 'verifying' | 'success' | 'error'; message?: string }>({ type: 'idle' });
+  const [checkoutPlan, setCheckoutPlan] = useState<string | null>(null);
+  const [checkoutStep, setCheckoutStep] = useState<'select' | 'onmeta'>('select');
+  const [isWidgetLoading, setIsWidgetLoading] = useState(false);
+
+  useEffect(() => {
+    if (checkoutPlan && checkoutStep === 'onmeta' && address) {
+      setIsWidgetLoading(true);
+      loadOnmetaSdk(() => {
+        setIsWidgetLoading(false);
+        const container = document.getElementById('onmeta-widget-root');
+        if (container) {
+          container.innerHTML = '';
+        }
+        
+        try {
+          const apiKey = process.env.NEXT_PUBLIC_ONMETA_API_KEY || 'onmeta_staging_placeholder_key';
+          const isPlaceholder = apiKey === 'onmeta_staging_placeholder_key';
+          
+          if (isPlaceholder) {
+            if (container) {
+              container.innerHTML = `
+                <div class="flex flex-col items-center justify-center p-8 h-full text-center space-y-4">
+                  <div class="p-3 bg-coral/10 rounded-full border border-coral/30">
+                    <span style="font-size: 24px; color: var(--accent-coral)">⚙</span>
+                  </div>
+                  <h3 class="text-sm font-semibold text-text-primary">Staging API Key Required</h3>
+                  <p class="text-xs text-text-secondary max-w-xs leading-relaxed">
+                    To test the UPI payment widget, please register at 
+                    <a href="https://stg.dashboard.onmeta.in" target="_blank" rel="noopener noreferrer" style="color: var(--accent-coral); text-decoration: underline;">
+                      stg.dashboard.onmeta.in
+                    </a> 
+                    and add <code>NEXT_PUBLIC_ONMETA_API_KEY</code> to your <code>.env</code> file.
+                  </p>
+                  <p class="text-xs text-text-tertiary">
+                    Pre-filled Wallet: <code class="bg-elevated px-1.5 py-0.5 rounded font-mono text-[10px]">${address}</code>
+                  </p>
+                </div>
+              `;
+            }
+            return;
+          }
+
+          const widget = new (window as any).onMetaWidget({
+            elementId: 'onmeta-widget-root',
+            apiKey: apiKey,
+            environment: 'staging',
+            walletAddress: address,
+            chainId: 42161, // Arbitrum One
+            fiatAmount: checkoutPlan === 'pro' ? 2500 : 25000,
+            fiatCurrency: 'INR',
+            tokenSymbol: 'ETH',
+          });
+          widget.init();
+        } catch (e) {
+          console.error("Failed to initialize Onmeta widget:", e);
+        }
+      });
+    }
+  }, [checkoutPlan, checkoutStep, address]);
 
   const tierInfo = TIER_LIMITS[tier] ?? TIER_LIMITS['free'];
   const pct = Math.min(100, quotaLimit > 0 ? (quotaUsed / quotaLimit) * 100 : 0);
@@ -306,7 +380,19 @@ export default function BillingPage() {
 
                   <button
                     disabled={isCurrent || upgrading !== null}
-                    onClick={() => handleUpgrade(plan.key)}
+                    onClick={() => {
+                      if (!isConnected) {
+                        setTxStatus({ type: 'error', message: 'Please connect your wallet first.' });
+                        return;
+                      }
+                      const token = localStorage.getItem('arbisim_jwt');
+                      if (!token) {
+                        setTxStatus({ type: 'error', message: 'Please sign in first.' });
+                        return;
+                      }
+                      setCheckoutPlan(plan.key);
+                      setCheckoutStep('select');
+                    }}
                     className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-[0.98] disabled:opacity-70 disabled:cursor-default ${
                       isCurrent ? 'border border-border text-text-secondary cursor-default' : plan.ctaStyle
                     }`}>
@@ -361,6 +447,118 @@ export default function BillingPage() {
         </div>
 
       </div>
+
+      {/* Checkout Modal (Flow A - UPI Top-up / Crypto Direct payment) */}
+      {checkoutPlan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-base/90 backdrop-blur-md" onClick={() => setCheckoutPlan(null)} />
+          <div className="glass relative w-full max-w-lg rounded-2xl p-6 shadow-2xl animate-slide-up flex flex-col max-h-[90vh] z-10">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6 border-b border-border/50 pb-4">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">
+                  Upgrade to {checkoutPlan === 'pro' ? 'Pro' : 'Enterprise'}
+                </h2>
+                <p className="text-xs text-text-tertiary mt-0.5">
+                  Choose your payment route to unlock higher limits.
+                </p>
+              </div>
+              <button onClick={() => setCheckoutPlan(null)} className="text-text-tertiary hover:text-text-primary transition-colors text-xl leading-none">×</button>
+            </div>
+
+            {checkoutStep === 'select' ? (
+              <div className="space-y-6 flex-1 overflow-y-auto pr-1">
+                {/* Info alert */}
+                <div className="p-3 bg-coral/5 border border-coral/20 rounded-lg text-xs text-text-secondary flex gap-2">
+                  <span className="text-coral shrink-0">ⓘ</span>
+                  <span>
+                    ArbiSim Guard receives all payments directly in our merchant address (MetaMask). You can top up your wallet with UPI first, or pay directly if you have ETH on Arbitrum.
+                  </span>
+                </div>
+
+                <div className="grid gap-4">
+                  {/* Option 1: Direct crypto payment */}
+                  <div className="p-4 rounded-xl border border-border/60 bg-elevated/40 hover:bg-elevated/80 transition-all duration-200 group flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-mono text-text-tertiary uppercase tracking-wider">Option 1</span>
+                        <span className="text-[10px] font-mono text-teal bg-teal/10 border border-teal/20 px-1.5 py-0.5 rounded">Native Web3</span>
+                      </div>
+                      <h3 className="text-sm font-semibold text-text-primary group-hover:text-coral transition-colors mb-1">
+                        Pay with Crypto Balance (Arbitrum ETH)
+                      </h3>
+                      <p className="text-xs text-text-secondary leading-relaxed mb-4">
+                        If you already have ETH in your wallet on Arbitrum One, sign a quick transaction to pay the equivalent of {checkoutPlan === 'pro' ? '$29 (~0.009 ETH)' : '$299 (~0.09 ETH)'}.
+                      </p>
+                    </div>
+                    {chainId !== TARGET_CHAIN_ID ? (
+                      <button
+                        onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}
+                        className="w-full py-2.5 bg-amber text-zinc-950 text-xs font-semibold rounded-lg hover:bg-amber-hover transition-all duration-150 active:scale-[0.98] shadow-md shadow-amber/15"
+                      >
+                        Switch Wallet to {TARGET_CHAIN_ID === 42161 ? 'Arbitrum One' : 'Arbitrum Sepolia'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setCheckoutPlan(null);
+                          handleUpgrade(checkoutPlan);
+                        }}
+                        className="w-full py-2 bg-coral text-white text-xs font-medium rounded-lg hover:bg-coral-hover shadow-md shadow-coral/15 transition-all duration-150 active:scale-[0.98]"
+                      >
+                        Pay {checkoutPlan === 'pro' ? '0.009' : '0.09'} ETH Now
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Option 2: Buy crypto using UPI via Onmeta */}
+                  <div className="p-4 rounded-xl border border-border/60 bg-elevated/40 hover:bg-elevated/80 transition-all duration-200 group flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-mono text-text-tertiary uppercase tracking-wider">Option 2</span>
+                        <span className="text-[10px] font-mono text-coral bg-coral/10 border border-coral/20 px-1.5 py-0.5 rounded">UPI Top-up</span>
+                      </div>
+                      <h3 className="text-sm font-semibold text-text-primary group-hover:text-coral transition-colors mb-1">
+                        Top up via UPI (Onmeta)
+                      </h3>
+                      <p className="text-xs text-text-secondary leading-relaxed mb-4">
+                        Buy Arbitrum ETH using INR directly via UPI (Google Pay, PhonePe, Paytm, etc.). The purchased ETH goes straight to your connected wallet, and then you can click Option 1.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setCheckoutStep('onmeta')}
+                      className="w-full py-2 border border-coral/30 hover:border-coral/60 text-coral bg-coral/5 text-xs font-medium rounded-lg transition-all duration-150 active:scale-[0.98]"
+                    >
+                      Buy ETH with UPI
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col min-h-[500px]">
+                {/* Back button */}
+                <button
+                  onClick={() => setCheckoutStep('select')}
+                  className="mb-4 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors flex items-center gap-1.5 self-start"
+                >
+                  ← Back to options
+                </button>
+
+                {/* Onmeta container */}
+                <div className="flex-1 w-full bg-base/40 rounded-xl border border-border/60 overflow-hidden relative min-h-[460px]">
+                  {isWidgetLoading && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-base/80 z-10 gap-3">
+                      <div className="animate-spin w-6 h-6 border-2 border-coral border-t-transparent rounded-full" />
+                      <p className="text-xs font-mono text-text-tertiary">Loading Onmeta Widget...</p>
+                    </div>
+                  )}
+                  <div id="onmeta-widget-root" className="w-full h-full min-h-[460px]" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import argon2 from 'argon2';
 import { ethers } from 'ethers';
 import { config } from '../config.js';
-import { createApiKey, getApiKeyByPrefix, pgPool } from '../db.js';
+import { createApiKey, getApiKeyByPrefix, pgPool, isPaymentVerified, recordPayment } from '../db.js';
 
 const router = Router();
 
@@ -140,6 +140,19 @@ router.post('/verify-upgrade', async (req: Request, res: Response): Promise<void
     return;
   }
 
+  // Prevent replay attacks
+  try {
+    const isAlreadyUsed = await isPaymentVerified(txHash);
+    if (isAlreadyUsed) {
+      res.status(400).json({ error: { code: 'REPLAY_ATTACK', message: 'This transaction hash has already been used for an upgrade.' } });
+      return;
+    }
+  } catch (err) {
+    console.error('Failed to query verified payments:', err);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to verify transaction replay.' } });
+    return;
+  }
+
   const targetTier = tier.toLowerCase();
   const validTiers = ['builder', 'protocol'];
   if (!validTiers.includes(targetTier)) {
@@ -147,28 +160,28 @@ router.post('/verify-upgrade', async (req: Request, res: Response): Promise<void
     return;
   }
 
-  const providers = [
-    new ethers.JsonRpcProvider(process.env.ARBITRUM_ONE_RPC ?? 'https://arb1.arbitrum.io/rpc'),
-    new ethers.JsonRpcProvider(process.env.ARBITRUM_SEPOLIA_RPC ?? 'https://sepolia-rollup.arbitrum.io/rpc')
-  ];
+  const chainId = process.env.NEXT_PUBLIC_ARBITRUM_CHAIN_ID || '42161';
+  const isSepolia = chainId === '421614';
+  const rpcUrl = isSepolia
+    ? (process.env.ARBITRUM_SEPOLIA_RPC ?? 'https://sepolia-rollup.arbitrum.io/rpc')
+    : (process.env.ARBITRUM_ONE_RPC ?? 'https://arb1.arbitrum.io/rpc');
+
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
 
   let tx: ethers.TransactionResponse | null = null;
   let receipt: ethers.TransactionReceipt | null = null;
 
-  for (const provider of providers) {
-    try {
-      tx = await provider.getTransaction(txHash);
-      if (tx) {
-        receipt = await provider.getTransactionReceipt(txHash);
-        break;
-      }
-    } catch (e) {
-      // ignore and try next
+  try {
+    tx = await provider.getTransaction(txHash);
+    if (tx) {
+      receipt = await provider.getTransactionReceipt(txHash);
     }
+  } catch (e) {
+    console.error('Failed to fetch transaction from RPC:', e);
   }
 
   if (!tx || !receipt) {
-    res.status(400).json({ error: { code: 'TRANSACTION_NOT_FOUND', message: 'Transaction not found on Arbitrum One or Sepolia.' } });
+    res.status(400).json({ error: { code: 'TRANSACTION_NOT_FOUND', message: `Transaction not found on the configured Arbitrum network (Chain ID: ${chainId}).` } });
     return;
   }
 
@@ -195,6 +208,15 @@ router.post('/verify-upgrade', async (req: Request, res: Response): Promise<void
   const valEth = ethers.formatEther(tx.value);
   if (parseFloat(valEth) < parseFloat(minEth)) {
     res.status(400).json({ error: { code: 'INSUFFICIENT_PAYMENT', message: `Expected at least ${minEth} ETH, received ${valEth} ETH.` } });
+    return;
+  }
+
+  // Record successful payment to prevent future replay of this transaction
+  try {
+    await recordPayment(txHash, address, targetTier, valEth);
+  } catch (err) {
+    console.error('Failed to record payment:', err);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to save payment record.' } });
     return;
   }
 

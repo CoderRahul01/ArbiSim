@@ -4,7 +4,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useAccount } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
+import { useAppKit } from '@reown/appkit/react';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -118,6 +119,8 @@ function useQuotaAlert() {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
+  const { open } = useAppKit();
   const quotaAlert = useQuotaAlert();
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [jwt, setJwt] = useState<string | null>(null);
@@ -170,6 +173,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (!isConnected || !jwt) {
+    const isOnlyConnected = isConnected && !jwt;
+
     return (
       <div className="min-h-screen bg-base flex flex-col items-center justify-center p-6 relative overflow-hidden">
         {/* Glow backgrounds */}
@@ -181,12 +186,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Image src="/logo.png" alt="ArbiSim Guard" width={40} height={40} className="rounded-lg shrink-0 shadow-sm" />
           </div>
           <h2 className="text-2xl font-bold text-text-primary mb-3">Welcome to ArbiSim Guard</h2>
-          <p className="text-sm text-text-secondary mb-8 max-w-sm leading-relaxed">
-            Please connect your wallet and sign in using SIWE to access the dashboard.
-          </p>
-          <div className="w-full flex justify-center py-2">
-            <appkit-button />
-          </div>
+          
+          {isOnlyConnected ? (
+            <>
+              <p className="text-sm text-text-secondary mb-8 max-w-sm leading-relaxed">
+                Your wallet is connected, but you need to sign a message to authenticate your session and access the dashboard.
+              </p>
+              <div className="w-full flex flex-col gap-3">
+                <button
+                  onClick={() => open({ view: 'Account' })}
+                  className="w-full py-3 rounded-xl bg-coral text-white text-xs font-semibold hover:bg-coral-hover shadow-lg shadow-coral/25 transition-all duration-150 active:scale-[0.98]"
+                >
+                  Sign Authentication Message
+                </button>
+                <button
+                  onClick={() => disconnect()}
+                  className="w-full py-3 rounded-xl border border-border text-text-secondary text-xs font-medium hover:text-text-primary hover:bg-elevated transition-all duration-150"
+                >
+                  Disconnect Wallet
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-text-secondary mb-8 max-w-sm leading-relaxed">
+                Please connect your wallet and sign in using SIWE to access the dashboard.
+              </p>
+              <div className="w-full flex justify-center py-2">
+                <appkit-button />
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
