@@ -83,44 +83,6 @@ export default {
       }
     }
 
-    const rawKey =
-      request.headers.get('X-API-Key') ??
-      request.headers.get('Authorization')?.replace('Bearer ', '') ??
-      null;
-
-    if (!rawKey) {
-      return jsonError(401, 'MISSING_API_KEY', 'Provide your API key via X-API-Key header.', origin);
-    }
-
-    // ── Admin routes: validate against ADMIN_API_KEY secret, bypass KV ───────
-    if (url.pathname.startsWith('/admin/') || url.pathname === '/admin') {
-      if (!env.ADMIN_API_KEY || rawKey !== env.ADMIN_API_KEY) {
-        return jsonError(403, 'FORBIDDEN', 'Invalid admin key.', origin);
-      }
-      const adminTarget = env.GATEWAY_URL.replace(/\/$/, '') + url.pathname + url.search;
-      const adminProxy = new Request(adminTarget, {
-        method: request.method,
-        headers: {
-          ...Object.fromEntries(request.headers.entries()),
-          'X-ArbiSim-Tier': 'admin',
-        },
-        body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : null,
-      });
-      try {
-        const adminResp = await fetch(adminProxy);
-        const adminBody = await adminResp.arrayBuffer();
-        return new Response(adminBody, {
-          status: adminResp.status,
-          headers: {
-            'Content-Type': adminResp.headers.get('Content-Type') ?? 'application/json',
-            ...corsHeaders(origin),
-          },
-        });
-      } catch {
-        return jsonError(502, 'GATEWAY_ERROR', 'Gateway unreachable.', origin);
-      }
-    }
-
     // ── Auth Routes (SIWE) ─────────────────────────────────────────────────
     if (url.pathname === '/api/v1/auth/nonce' && request.method === 'GET') {
       const nonce = crypto.randomUUID().replace(/-/g, '');
@@ -159,6 +121,44 @@ export default {
         });
       } catch (err) {
         return jsonError(500, 'INTERNAL_ERROR', 'Verification failed.', origin);
+      }
+    }
+
+    const rawKey =
+      request.headers.get('X-API-Key') ??
+      request.headers.get('Authorization')?.replace('Bearer ', '') ??
+      null;
+
+    if (!rawKey) {
+      return jsonError(401, 'MISSING_API_KEY', 'Provide your API key via X-API-Key header.', origin);
+    }
+
+    // ── Admin routes: validate against ADMIN_API_KEY secret, bypass KV ───────
+    if (url.pathname.startsWith('/admin/') || url.pathname === '/admin') {
+      if (!env.ADMIN_API_KEY || rawKey !== env.ADMIN_API_KEY) {
+        return jsonError(403, 'FORBIDDEN', 'Invalid admin key.', origin);
+      }
+      const adminTarget = env.GATEWAY_URL.replace(/\/$/, '') + url.pathname + url.search;
+      const adminProxy = new Request(adminTarget, {
+        method: request.method,
+        headers: {
+          ...Object.fromEntries(request.headers.entries()),
+          'X-ArbiSim-Tier': 'admin',
+        },
+        body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : null,
+      });
+      try {
+        const adminResp = await fetch(adminProxy);
+        const adminBody = await adminResp.arrayBuffer();
+        return new Response(adminBody, {
+          status: adminResp.status,
+          headers: {
+            'Content-Type': adminResp.headers.get('Content-Type') ?? 'application/json',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch {
+        return jsonError(502, 'GATEWAY_ERROR', 'Gateway unreachable.', origin);
       }
     }
 
