@@ -111,7 +111,7 @@ async function main() {
 
     // 2. Start Express app if not running in pure CLI/MCP mode
     if (!isMcpMode) {
-      app.listen(port, () => {
+      app.listen(port, '0.0.0.0', () => {
         console.log(`ArbiSim Guard Express Gateway running on port ${port}`);
         console.log(`Swagger documentation available at http://localhost:${port}/api-docs`);
       });
