@@ -277,7 +277,7 @@ export default function ApiKeysPage() {
             <div>
               <p className="text-xs text-text-tertiary mb-2 font-mono uppercase tracking-wider">REST API</p>
               <pre className="text-xs font-mono text-text-secondary bg-elevated border border-border rounded-lg p-3 overflow-x-auto">
-{`curl -X POST https://arbisim-proxy.workers.dev/api/v1/simulate \\
+{`curl -X POST ${CF_WORKER_URL}/api/v1/simulate \\
   -H "X-API-Key: ask_free_••••••••" \\
   -H "Content-Type: application/json" \\
   -d '{"network":"arbitrum-one","agent_address":"0x...","transactions":[...],"max_slippage_tolerance":2.0}'`}
