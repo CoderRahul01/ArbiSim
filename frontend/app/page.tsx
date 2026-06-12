@@ -118,11 +118,22 @@ function FlagGrid() {
   );
 }
 
-function PricingCard({ tier, price, limit, features, cta, highlighted }: {
-  tier: string; price: string; limit: string; features: string[]; cta: string; highlighted?: boolean;
+function PricingCard({ tier, price, limit, features, cta, href, highlighted }: {
+  tier: string; price: string; limit: string; features: string[]; cta: string; href: string; highlighted?: boolean;
 }) {
+  const isEmail = href.startsWith('mailto:');
+  const buttonElement = (
+    <button className={`w-full py-2.5 rounded-md text-sm font-medium transition-all duration-200 active:scale-95 ${
+      highlighted
+        ? 'bg-coral text-white hover:bg-coral/90 shadow-lg shadow-coral/30'
+        : 'border border-border text-text-primary hover:bg-elevated hover:border-zinc-600'
+    }`}>
+      {cta}
+    </button>
+  );
+
   return (
-    <div className={`h-full rounded-xl border p-6 flex flex-col gap-4 transition-all duration-300 hover:scale-[1.02] ${
+    <div className={`rounded-xl border p-6 flex flex-col gap-4 transition-all duration-300 hover:scale-[1.02] ${
       highlighted
         ? 'border-coral/50 bg-gradient-to-b from-coral/10 to-surface shadow-lg shadow-coral/10'
         : 'border-border bg-surface hover:border-zinc-600'
@@ -140,13 +151,15 @@ function PricingCard({ tier, price, limit, features, cta, highlighted }: {
           </li>
         ))}
       </ul>
-      <button className={`w-full py-2.5 rounded-md text-sm font-medium transition-all duration-200 active:scale-95 ${
-        highlighted
-          ? 'bg-coral text-white hover:bg-coral/90 shadow-lg shadow-coral/30'
-          : 'border border-border text-text-primary hover:bg-elevated hover:border-zinc-600'
-      }`}>
-        {cta}
-      </button>
+      {isEmail ? (
+        <a href={href} className="w-full">
+          {buttonElement}
+        </a>
+      ) : (
+        <Link href={href} className="w-full">
+          {buttonElement}
+        </Link>
+      )}
     </div>
   );
 }
@@ -345,16 +358,16 @@ preflight_simulate({
         <div className="max-w-6xl mx-auto px-6">
           <h2 className="font-serif text-h1 text-text-primary mb-3">Pricing</h2>
           <p className="text-text-secondary mb-12">Flat monthly pricing. One prevented bad transaction pays for the entire year.</p>
-          <div className="grid md:grid-cols-3 gap-6 max-w-4xl">
+          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto items-stretch">
             <PricingCard tier="Free" price="$0" limit="500 simulations / month"
               features={['All 8 safety flags', 'Gas breakdown (L1 + L2)', 'MEV sandwich scoring', 'MCP tool support', 'Community support']}
-              cta="Get free API key" />
+              cta="Get free API key" href="/dashboard" />
             <PricingCard tier="Pro" price="$29" limit="10,000 simulations / month" highlighted
               features={['Everything in Free', 'ERC-4337 UserOp validation', 'Timeboost premium calc', 'Stylus WASM ink metrics', 'Email support']}
-              cta="Start building" />
+              cta="Start building" href="/dashboard/billing" />
             <PricingCard tier="Enterprise" price="$299" limit="100,000 simulations / month"
               features={['Everything in Pro', 'SLA guarantee', 'Custom rate limits', 'Webhook callbacks', 'Dedicated support']}
-              cta="Contact us" />
+              cta="Contact us" href="mailto:hello@arbisimguard.com" />
           </div>
         </div>
       </section>
