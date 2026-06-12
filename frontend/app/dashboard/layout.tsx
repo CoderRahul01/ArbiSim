@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useAccount } from 'wagmi';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -116,8 +117,39 @@ function useQuotaAlert() {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { isConnected } = useAccount();
   const quotaAlert = useQuotaAlert();
   const [alertDismissed, setAlertDismissed] = useState(false);
+  const [jwt, setJwt] = useState<string | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem('arbisim_jwt');
+      if (!token) {
+        setJwt(null);
+        setCheckingAuth(false);
+        return;
+      }
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.exp * 1000 < Date.now()) {
+          localStorage.removeItem('arbisim_jwt');
+          setJwt(null);
+        } else {
+          setJwt(token);
+        }
+      } catch {
+        localStorage.removeItem('arbisim_jwt');
+        setJwt(null);
+      }
+      setCheckingAuth(false);
+    };
+
+    checkAuth();
+    const interval = setInterval(checkAuth, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   function dismissAlert() {
     sessionStorage.setItem('arbisim_quota_alert_dismissed', '1');
@@ -127,6 +159,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   function isActive(href: string) {
     if (href === '/dashboard') return pathname === '/dashboard';
     return pathname.startsWith(href);
+  }
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-base flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-coral border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (!isConnected || !jwt) {
+    return (
+      <div className="min-h-screen bg-base flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        {/* Glow backgrounds */}
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-coral/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] pointer-events-none" />
+
+        <div className="glass max-w-md w-full rounded-2xl p-8 border border-border shadow-2xl flex flex-col items-center text-center relative z-10 animate-slide-up">
+          <div className="w-16 h-16 rounded-2xl bg-coral/10 border border-coral/20 flex items-center justify-center mb-6 shadow-lg shadow-coral/10">
+            <Image src="/logo.png" alt="ArbiSim Guard" width={40} height={40} className="rounded-lg shrink-0 shadow-sm" />
+          </div>
+          <h2 className="text-2xl font-bold text-text-primary mb-3">Welcome to ArbiSim Guard</h2>
+          <p className="text-sm text-text-secondary mb-8 max-w-sm leading-relaxed">
+            Please connect your wallet and sign in using SIWE to access the dashboard.
+          </p>
+          <div className="w-full flex justify-center py-2">
+            <appkit-button />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

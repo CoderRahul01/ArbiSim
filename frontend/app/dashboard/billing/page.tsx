@@ -2,8 +2,11 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useSendTransaction, useAccount } from 'wagmi';
+import { parseEther } from 'viem';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+const MERCHANT_ADDRESS = process.env.NEXT_PUBLIC_MERCHANT_ADDRESS ?? '0x4FE1137021102A860Ff374Db8fB13bA78A00f9dD';
 
 const TIER_LIMITS: Record<string, { monthly: number; label: string }> = {
   free:       { monthly: 500,    label: 'Free' },
@@ -11,9 +14,10 @@ const TIER_LIMITS: Record<string, { monthly: number; label: string }> = {
   enterprise: { monthly: 100000, label: 'Enterprise' },
 };
 
-function parseTierFromKey(key: string): string {
-  const match = key.match(/^ask_([a-z]+)_/);
-  return match?.[1] ?? 'free';
+function dbTierToUiTier(tier: string): string {
+  if (tier === 'builder') return 'pro';
+  if (tier === 'protocol') return 'enterprise';
+  return tier;
 }
 
 function useBillingStats() {
@@ -22,8 +26,23 @@ function useBillingStats() {
   const [tier, setTier] = useState('free');
 
   useEffect(() => {
+    // 1. Fetch current user tier from auth/billing endpoint
+    const token = localStorage.getItem('arbisim_jwt');
+    if (token) {
+      fetch(`${CF_WORKER_URL}/api/v1/billing/tier`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then((data: { tier: string } | null) => {
+          if (data?.tier) {
+            setTier(dbTierToUiTier(data.tier));
+          }
+        })
+        .catch(() => {});
+    }
+
+    // 2. Fetch monthly stats
     const key = localStorage.getItem('arbisim_api_key') ?? '';
-    if (key) setTier(parseTierFromKey(key));
     if (!key) return;
 
     fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
@@ -97,7 +116,7 @@ const PLANS = [
       'Dedicated support',
       'Custom integrations',
     ],
-    cta: 'Contact us',
+    cta: 'Upgrade to Enterprise',
     ctaDisabled: false,
     ctaStyle: 'border border-border text-text-primary hover:bg-elevated',
   },
@@ -105,9 +124,69 @@ const PLANS = [
 
 export default function BillingPage() {
   const { quotaUsed, quotaLimit, tier } = useBillingStats();
+  const { sendTransactionAsync } = useSendTransaction();
+  const { isConnected } = useAccount();
+  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [txStatus, setTxStatus] = useState<{ type: 'idle' | 'signing' | 'confirming' | 'verifying' | 'success' | 'error'; message?: string }>({ type: 'idle' });
+
   const tierInfo = TIER_LIMITS[tier] ?? TIER_LIMITS['free'];
   const pct = Math.min(100, quotaLimit > 0 ? (quotaUsed / quotaLimit) * 100 : 0);
   const quotaWarning = pct > 80;
+
+  async function handleUpgrade(planKey: string) {
+    if (!isConnected) {
+      setTxStatus({ type: 'error', message: 'Please connect your wallet first.' });
+      return;
+    }
+
+    const token = localStorage.getItem('arbisim_jwt');
+    if (!token) {
+      setTxStatus({ type: 'error', message: 'Please sign in first.' });
+      return;
+    }
+
+    setUpgrading(planKey);
+    setTxStatus({ type: 'signing', message: 'Awaiting wallet confirmation...' });
+
+    // pro -> builder, enterprise -> protocol
+    const targetDbTier = planKey === 'pro' ? 'builder' : 'protocol';
+    const ethAmount = planKey === 'pro' ? '0.009' : '0.09'; // $29 ~ 0.009 ETH, $299 ~ 0.09 ETH
+
+    try {
+      // 1. Send transaction
+      const txHash = await sendTransactionAsync({
+        to: MERCHANT_ADDRESS as `0x${string}`,
+        value: parseEther(ethAmount),
+      });
+
+      setTxStatus({ type: 'confirming', message: 'Confirming transaction on Arbitrum...' });
+
+      // 2. Call backend to verify and upgrade
+      setTxStatus({ type: 'verifying', message: 'Verifying payment onchain and upgrading...' });
+
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/billing/upgrade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ txHash, tier: targetDbTier }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as any;
+        throw new Error(err?.error?.message ?? 'Transaction verification failed.');
+      }
+
+      setTxStatus({ type: 'success', message: `Successfully upgraded to ${planKey === 'pro' ? 'Pro' : 'Enterprise'}!` });
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err: any) {
+      console.error(err);
+      setTxStatus({ type: 'error', message: err.message || 'Payment or verification failed.' });
+    } finally {
+      setUpgrading(null);
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -119,6 +198,27 @@ export default function BillingPage() {
       </div>
 
       <div className="flex-1 px-6 md:px-8 py-8 max-w-5xl w-full mx-auto space-y-8">
+
+        {/* Transaction Status Banner */}
+        {txStatus.type !== 'idle' && (
+          <div className={`p-4 rounded-xl border flex items-center justify-between gap-4 animate-slide-up ${
+            txStatus.type === 'success' ? 'bg-teal/10 border-teal/30 text-teal' :
+            txStatus.type === 'error' ? 'bg-danger/10 border-danger/30 text-danger' :
+            'bg-coral/10 border-coral/30 text-coral'
+          }`}>
+            <div className="flex items-center gap-3">
+              {(txStatus.type === 'signing' || txStatus.type === 'confirming' || txStatus.type === 'verifying') && (
+                <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
+              )}
+              {txStatus.type === 'success' && <span>✓</span>}
+              {txStatus.type === 'error' && <span>⚠</span>}
+              <span className="text-sm font-medium">{txStatus.message}</span>
+            </div>
+            {txStatus.type === 'error' && (
+              <button onClick={() => setTxStatus({ type: 'idle' })} className="text-xs font-mono underline hover:no-underline">Dismiss</button>
+            )}
+          </div>
+        )}
 
         {/* Current plan + usage */}
         <div className="grid md:grid-cols-2 gap-6">
@@ -205,11 +305,12 @@ export default function BillingPage() {
                   </ul>
 
                   <button
-                    disabled={isCurrent}
+                    disabled={isCurrent || upgrading !== null}
+                    onClick={() => handleUpgrade(plan.key)}
                     className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-[0.98] disabled:opacity-70 disabled:cursor-default ${
                       isCurrent ? 'border border-border text-text-secondary cursor-default' : plan.ctaStyle
                     }`}>
-                    {isCurrent ? 'Current plan' : plan.cta}
+                    {isCurrent ? 'Current plan' : upgrading === plan.key ? 'Processing...' : plan.cta}
                   </button>
                 </div>
               );
