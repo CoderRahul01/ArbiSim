@@ -122,7 +122,7 @@ function PricingCard({ tier, price, limit, features, cta, highlighted }: {
   tier: string; price: string; limit: string; features: string[]; cta: string; highlighted?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border p-6 flex flex-col gap-4 transition-all duration-300 hover:scale-[1.02] ${
+    <div className={`h-full rounded-xl border p-6 flex flex-col gap-4 transition-all duration-300 hover:scale-[1.02] ${
       highlighted
         ? 'border-coral/50 bg-gradient-to-b from-coral/10 to-surface shadow-lg shadow-coral/10'
         : 'border-border bg-surface hover:border-zinc-600'
@@ -208,9 +208,9 @@ export default function HomePage() {
               <Link href="/dashboard/simulate" className="px-6 py-3 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 active:scale-95 shadow-xl shadow-coral/25 text-center">
                 Open Dashboard
               </Link>
-              <a href="https://github.com/rahulpandey187/arbisim-guard" target="_blank" rel="noopener noreferrer"
+              <a href="#how-it-works"
                 className="px-6 py-3 border border-border text-text-primary rounded-lg font-medium text-sm hover:bg-elevated hover:border-zinc-600 transition-all duration-200 active:scale-95 text-center">
-                View on GitHub
+                Read documentation
               </a>
             </div>
             <div className="flex gap-8 mt-12 pt-8 border-t border-border">
