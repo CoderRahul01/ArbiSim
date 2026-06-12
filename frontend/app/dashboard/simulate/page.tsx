@@ -125,6 +125,12 @@ export default function DashboardPage() {
     } catch { /* leave as-is */ }
   }, [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('arbisim_api_key') ?? '';
+    setApiKey(stored.trim().replace(/[^\x20-\x7E]/g, ''));
+  }, []);
+
   const simulate = useCallback(async () => {
     const cleanKey = apiKey.trim().replace(/[^\x20-\x7E]/g, '');
     if (!cleanKey) {
