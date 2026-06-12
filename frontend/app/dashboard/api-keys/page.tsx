@@ -118,7 +118,7 @@ export default function ApiKeysPage() {
       setJustCreated(newKey);
       setKeys(prev => [...prev, newKey]);
       
-      try { localStorage.setItem('arbisim_api_key', newKey.fullKey!); } catch {}
+      try { localStorage.setItem('arbisim_api_key', newKey.fullKey!.trim().replace(/[^\x20-\x7E]/g, '')); } catch {}
       setShowModal(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create key.');

@@ -99,7 +99,7 @@ function useQuotaAlert() {
     const dismissed = sessionStorage.getItem('arbisim_quota_alert_dismissed');
     if (dismissed) return;
 
-    const key = localStorage.getItem('arbisim_api_key') ?? '';
+    const key = (localStorage.getItem('arbisim_api_key') ?? '').trim().replace(/[^\x20-\x7E]/g, '');
     if (!key) return;
 
     fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })

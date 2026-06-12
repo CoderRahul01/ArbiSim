@@ -80,7 +80,7 @@ export default function LogsPage() {
   const limit = 20;
 
   useEffect(() => {
-    const key = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
+    const key = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '').trim().replace(/[^\x20-\x7E]/g, '') : '';
     setApiKey(key);
   }, []);
 

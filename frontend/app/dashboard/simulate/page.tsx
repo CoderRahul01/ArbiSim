@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
@@ -106,8 +106,15 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('flags');
 
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('arbisim_api_key') ?? '';
+    setApiKey(stored.trim().replace(/[^\x20-\x7E]/g, ''));
+  }, []);
+
   const simulate = useCallback(async () => {
-    if (!apiKey.trim()) {
+    const cleanKey = apiKey.trim().replace(/[^\x20-\x7E]/g, '');
+    if (!cleanKey) {
       alert('Enter your API key above.');
       return;
     }
@@ -126,7 +133,7 @@ export default function DashboardPage() {
     try {
       const res = await fetch(`${CF_WORKER_URL}/api/v1/simulate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': cleanKey },
         body: JSON.stringify(parsed),
       });
 
@@ -145,7 +152,7 @@ export default function DashboardPage() {
         for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 3000));
           const poll = await fetch(`${CF_WORKER_URL}/api/v1/simulate/${sessionId}`, {
-            headers: { 'X-API-Key': apiKey },
+            headers: { 'X-API-Key': cleanKey },
           }).catch(() => null);
           if (!poll?.ok) continue;
           const pollData = await poll.json() as SimulationResult;
@@ -190,7 +197,11 @@ export default function DashboardPage() {
               <input
                 type="text"
                 value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value.replace(/[^\x20-\x7E]/g, '');
+                  setApiKey(val);
+                  localStorage.setItem('arbisim_api_key', val);
+                }}
                 placeholder="ask_free_••••••••••••"
                 className="w-full px-4 py-3 rounded-lg border border-border bg-surface text-text-primary font-mono text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors"
               />
