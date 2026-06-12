@@ -193,16 +193,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Bottom section */}
         <div className="border-t border-border p-3 shrink-0">
           <div className="px-3 py-2.5 rounded-lg bg-elevated border border-border">
-            <div className="flex items-center gap-2.5 mb-2.5">
-              <div className="w-6 h-6 rounded-full bg-coral/20 flex items-center justify-center shrink-0">
-                <span className="text-coral text-xs font-semibold">D</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-text-primary truncate">Demo Account</p>
-                <p className="text-xs text-text-tertiary font-mono truncate">free tier</p>
-              </div>
+            <div className="mb-2.5">
+              <appkit-button />
             </div>
-            <div className="w-full bg-border rounded-full h-1.5">
+            <div className="w-full bg-border rounded-full h-1.5 mt-2.5">
               <div className="bg-coral h-1.5 rounded-full" style={{ width: '0%' }} />
             </div>
             <p className="text-xs text-text-tertiary mt-1.5">0 / 500 simulations</p>

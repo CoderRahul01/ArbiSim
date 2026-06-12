@@ -3,30 +3,24 @@
 import { useState, useEffect, useCallback } from 'react';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
-const ADMIN_KEY     = process.env.NEXT_PUBLIC_ADMIN_KEY    ?? '';
 
 interface ApiKey {
   id: string;
   prefix: string;
-  tier: 'free' | 'pro' | 'enterprise';
-  monthlyLimit: number;
-  minuteLimit: number;
+  tier: 'free' | 'builder' | 'protocol' | 'admin';
+  monthlyLimit?: number;
+  minuteLimit?: number;
   createdAt: string;
-  lastUsed?: string;
+  hash: string;
   active: boolean;
   fullKey?: string;
 }
 
 const TIER_COLORS: Record<string, string> = {
   free:       'text-text-secondary bg-elevated border-border',
-  pro:        'text-coral bg-coral/10 border-coral/25',
-  enterprise: 'text-amber bg-amber/10 border-amber/25',
-};
-
-const TIER_LIMITS: Record<string, { monthly: number; perMinute: number }> = {
-  free:       { monthly: 500,    perMinute: 10  },
-  pro:        { monthly: 10000,  perMinute: 60  },
-  enterprise: { monthly: 100000, perMinute: 300 },
+  builder:    'text-blue-400 bg-blue-500/10 border-blue-500/25',
+  protocol:   'text-coral bg-coral/10 border-coral/25',
+  admin:      'text-amber bg-amber/10 border-amber/25',
 };
 
 function CopyButton({ text }: { text: string }) {
@@ -55,97 +49,101 @@ export default function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [creating, setCreating] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [newKeyTier, setNewKeyTier] = useState<'free' | 'pro' | 'enterprise'>('free');
-  const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyTier, setNewKeyTier] = useState<'free' | 'builder' | 'protocol'>('free');
   const [justCreated, setJustCreated] = useState<ApiKey | null>(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Load persisted keys from localStorage
-  useEffect(() => {
+  const fetchKeys = useCallback(async () => {
+    const token = localStorage.getItem('arbisim_jwt');
+    if (!token) {
+      setIsAuthenticated(false);
+      setLoading(false);
+      return;
+    }
+    setIsAuthenticated(true);
+    
     try {
-      const stored = localStorage.getItem('arbisim_demo_keys');
-      if (stored) setKeys(JSON.parse(stored));
-    } catch {}
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/keys`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeys(data);
+      } else if (res.status === 401) {
+        setIsAuthenticated(false);
+        localStorage.removeItem('arbisim_jwt');
+      }
+    } catch (e) {
+      console.error('Failed to load keys', e);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  function persist(updated: ApiKey[]) {
-    setKeys(updated);
-    try { localStorage.setItem('arbisim_demo_keys', JSON.stringify(updated)); } catch {}
-  }
+  useEffect(() => {
+    fetchKeys();
+    // Re-fetch periodically or when window gets focus if needed
+    const interval = setInterval(fetchKeys, 5000);
+    return () => clearInterval(interval);
+  }, [fetchKeys]);
 
   const createKey = useCallback(async () => {
-    if (!newKeyName.trim()) { setError('Enter a name for the key.'); return; }
     setError('');
     setCreating(true);
+    const token = localStorage.getItem('arbisim_jwt');
+    if (!token) {
+      setError('You must sign in with your wallet first.');
+      setCreating(false);
+      return;
+    }
 
     try {
-      let fullKey: string;
-      let record: Omit<ApiKey, 'id' | 'fullKey'>;
-
-      if (ADMIN_KEY) {
-        // Real backend call — routes through CF Worker which validates ADMIN_API_KEY
-        const res = await fetch(`${CF_WORKER_URL}/admin/api-keys`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-API-Key': ADMIN_KEY },
-          body: JSON.stringify({ tier: newKeyTier, owner_email: newKeyName }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
-          throw new Error(err?.error?.message ?? `HTTP ${res.status}`);
-        }
-        const data = await res.json() as {
-          key: string;
-          prefix: string;
-          tier: string;
-          id: string;
-          created_at: string;
-          cf_kv: { hash: string; value: string; command: string };
-        };
-        fullKey = data.key;
-        record = {
-          prefix: data.prefix + '.••••••••',
-          tier: newKeyTier,
-          monthlyLimit: TIER_LIMITS[newKeyTier].monthly,
-          minuteLimit:  TIER_LIMITS[newKeyTier].perMinute,
-          createdAt:    data.created_at,
-          active:       true,
-        };
-      } else {
-        // Demo mode — client-side key for UI demonstration only
-        const rand = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-          .map(b => b.toString(16).padStart(2, '0')).join('');
-        fullKey = `ask_${newKeyTier}_${rand.slice(0, 8)}.${rand.slice(8)}`;
-        record = {
-          prefix: `ask_${newKeyTier}_${rand.slice(0, 8)}.••••••••`,
-          tier: newKeyTier,
-          monthlyLimit: TIER_LIMITS[newKeyTier].monthly,
-          minuteLimit:  TIER_LIMITS[newKeyTier].perMinute,
-          createdAt:    new Date().toISOString(),
-          active:       true,
-        };
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/keys`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ tier: newKeyTier }),
+      });
+      
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as any;
+        throw new Error(err?.error?.message ?? `HTTP ${res.status}`);
       }
-
-      const newKey: ApiKey = { id: crypto.randomUUID(), ...record, fullKey };
+      
+      const newKey = await res.json() as ApiKey;
       setJustCreated(newKey);
-      persist([newKey, ...keys]);
-      // Store as the active key so the simulate page and stats hook pick it up
-      try { localStorage.setItem('arbisim_api_key', fullKey); } catch {}
+      setKeys(prev => [...prev, newKey]);
+      
+      try { localStorage.setItem('arbisim_api_key', newKey.fullKey!); } catch {}
       setShowModal(false);
-      setNewKeyName('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create key.');
     } finally {
       setCreating(false);
     }
-  }, [newKeyName, newKeyTier, keys]);
+  }, [newKeyTier]);
 
-  function revokeKey(id: string) {
+  async function revokeKey(hash: string) {
     if (!confirm('Revoke this key? This cannot be undone.')) return;
-    persist(keys.map(k => k.id === id ? { ...k, active: false } : k));
-  }
-
-  function deleteKey(id: string) {
-    persist(keys.filter(k => k.id !== id));
+    const token = localStorage.getItem('arbisim_jwt');
+    if (!token) return;
+    try {
+      await fetch(`${CF_WORKER_URL}/api/v1/keys`, {
+        method: 'DELETE',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ hash })
+      });
+      fetchKeys();
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   return (
@@ -154,8 +152,8 @@ export default function ApiKeysPage() {
       <div className="border-b border-border bg-surface/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="px-6 md:px-8 h-14 flex items-center justify-between">
           <h1 className="text-sm font-semibold text-text-primary">API Keys</h1>
-          <button onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-coral text-white text-xs font-medium rounded-lg hover:bg-coral-hover transition-all duration-200 active:scale-95 shadow-md shadow-coral/25">
+          <button onClick={() => setShowModal(true)} disabled={!isAuthenticated}
+            className="flex items-center gap-2 px-4 py-2 bg-coral text-white text-xs font-medium rounded-lg hover:bg-coral-hover disabled:opacity-50 transition-all duration-200 active:scale-95 shadow-md shadow-coral/25">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/>
             </svg>
@@ -183,27 +181,17 @@ export default function ApiKeysPage() {
               <span className="flex-1 text-text-primary break-all">{justCreated.fullKey}</span>
               <CopyButton text={justCreated.fullKey ?? ''} />
             </div>
-            {!ADMIN_KEY && (
-              <div className="mt-3 px-4 py-2.5 rounded-lg bg-amber/5 border border-amber/20">
-                <p className="text-xs text-amber-300">
-                  <span className="font-semibold">Demo mode:</span> This key was generated locally and must be seeded into Cloudflare KV before it authenticates API calls.
-                  Deploy the backend and run: <code className="font-mono ml-1 text-amber">wrangler kv key put --namespace-id YOUR_ID &quot;sha256({justCreated.fullKey?.slice(0,12)}...)&quot; &#39;{'{'}&quot;tier&quot;:&quot;{justCreated.tier}&quot;,...{'}'}&#39;</code>
-                </p>
-              </div>
-            )}
           </div>
         )}
 
-        {/* Info banner if no admin key */}
-        {!ADMIN_KEY && keys.length === 0 && (
-          <div className="rounded-xl border border-amber/20 bg-amber/5 p-5">
+        {!isAuthenticated && !loading && (
+          <div className="rounded-xl border border-coral/30 bg-coral/5 p-5">
             <div className="flex gap-3">
-              <span className="text-amber text-lg shrink-0">ℹ</span>
+              <span className="text-coral text-lg shrink-0">🔒</span>
               <div>
-                <p className="text-sm font-medium text-text-primary mb-1">Demo mode active</p>
+                <p className="text-sm font-medium text-text-primary mb-1">Sign in required</p>
                 <p className="text-xs text-text-secondary leading-relaxed">
-                  Keys created here are UI demonstrations. To create real authenticated keys, deploy the gateway and set
-                  <code className="font-mono text-amber mx-1 text-xs">NEXT_PUBLIC_ADMIN_KEY</code> in your Vercel environment variables.
+                  Please connect your wallet and sign the SIWE message using the button in the sidebar to manage your API keys.
                 </p>
               </div>
             </div>
@@ -211,82 +199,76 @@ export default function ApiKeysPage() {
         )}
 
         {/* Keys table */}
-        <div className="rounded-xl border border-border bg-surface overflow-hidden">
-          <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-text-primary">Your keys</h2>
-            <span className="text-xs font-mono text-text-tertiary">{keys.filter(k => k.active).length} active</span>
-          </div>
-
-          {keys.length === 0 ? (
-            <div className="px-6 py-16 text-center">
-              <div className="w-12 h-12 rounded-xl bg-elevated border border-border flex items-center justify-center mx-auto mb-4">
-                <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="text-text-tertiary">
-                  <circle cx="6" cy="6" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M8.5 8.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <p className="text-sm font-medium text-text-primary mb-2">No API keys yet</p>
-              <p className="text-xs text-text-tertiary mb-5 max-w-xs mx-auto">Create a key to authenticate API calls and start running simulations from your agent or CLI.</p>
-              <button onClick={() => setShowModal(true)}
-                className="px-4 py-2 bg-coral text-white text-xs font-medium rounded-lg hover:bg-coral-hover transition-colors shadow-md shadow-coral/20">
-                Create your first key
-              </button>
+        {isAuthenticated && (
+          <div className="rounded-xl border border-border bg-surface overflow-hidden">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-text-primary">Your keys</h2>
+              <span className="text-xs font-mono text-text-tertiary">{keys.filter(k => k.active).length} active</span>
             </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {/* Table header */}
-              <div className="hidden md:grid grid-cols-[1fr_80px_90px_120px_100px] gap-4 px-6 py-2.5 bg-elevated">
-                {['Key', 'Tier', 'Limits', 'Created', 'Actions'].map(h => (
-                  <span key={h} className="text-xs font-mono text-text-tertiary uppercase tracking-wider">{h}</span>
+
+            {loading ? (
+              <div className="px-6 py-16 text-center text-text-tertiary text-sm">Loading keys...</div>
+            ) : keys.length === 0 ? (
+              <div className="px-6 py-16 text-center">
+                <div className="w-12 h-12 rounded-xl bg-elevated border border-border flex items-center justify-center mx-auto mb-4">
+                  <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="text-text-tertiary">
+                    <circle cx="6" cy="6" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M8.5 8.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <p className="text-sm font-medium text-text-primary mb-2">No API keys yet</p>
+                <p className="text-xs text-text-tertiary mb-5 max-w-xs mx-auto">Create a key to authenticate API calls and start running simulations from your agent or CLI.</p>
+                <button onClick={() => setShowModal(true)}
+                  className="px-4 py-2 bg-coral text-white text-xs font-medium rounded-lg hover:bg-coral-hover transition-colors shadow-md shadow-coral/20">
+                  Create your first key
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {/* Table header */}
+                <div className="hidden md:grid grid-cols-[1fr_80px_120px_100px] gap-4 px-6 py-2.5 bg-elevated">
+                  {['Key', 'Tier', 'Created', 'Actions'].map(h => (
+                    <span key={h} className="text-xs font-mono text-text-tertiary uppercase tracking-wider">{h}</span>
+                  ))}
+                </div>
+                {keys.map(key => (
+                  <div key={key.id} className={`grid md:grid-cols-[1fr_80px_120px_100px] gap-4 items-center px-6 py-4 ${!key.active ? 'opacity-50' : ''}`}>
+                    {/* Key prefix */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-md bg-elevated border border-border flex items-center justify-center shrink-0">
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="text-text-tertiary">
+                          <circle cx="6" cy="6" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M8.5 8.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </div>
+                      <div className="min-w-0">
+                        <code className="text-sm font-mono text-text-primary">{key.prefix}</code>
+                        {!key.active && <span className="ml-2 text-xs text-danger font-medium">revoked</span>}
+                      </div>
+                    </div>
+                    {/* Tier */}
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-mono font-medium w-fit capitalize ${TIER_COLORS[key.tier]}`}>
+                      {key.tier}
+                    </span>
+                    {/* Created */}
+                    <p className="text-xs text-text-tertiary font-mono">
+                      {new Date(key.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                      {key.active && (
+                        <button onClick={() => revokeKey(key.hash)}
+                          className="text-xs text-text-tertiary hover:text-danger transition-colors font-mono border border-transparent hover:border-danger/30 px-2 py-1 rounded">
+                          revoke
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
-              {keys.map(key => (
-                <div key={key.id} className={`grid md:grid-cols-[1fr_80px_90px_120px_100px] gap-4 items-center px-6 py-4 ${!key.active ? 'opacity-50' : ''}`}>
-                  {/* Key prefix */}
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-md bg-elevated border border-border flex items-center justify-center shrink-0">
-                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="text-text-tertiary">
-                        <circle cx="6" cy="6" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
-                        <path d="M8.5 8.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      </svg>
-                    </div>
-                    <div className="min-w-0">
-                      <code className="text-sm font-mono text-text-primary">{key.prefix}</code>
-                      {!key.active && <span className="ml-2 text-xs text-danger font-medium">revoked</span>}
-                    </div>
-                  </div>
-                  {/* Tier */}
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-mono font-medium w-fit ${TIER_COLORS[key.tier]}`}>
-                    {key.tier}
-                  </span>
-                  {/* Limits */}
-                  <div className="text-xs text-text-tertiary font-mono">
-                    <p>{key.monthlyLimit.toLocaleString()}/mo</p>
-                    <p>{key.minuteLimit}/min</p>
-                  </div>
-                  {/* Created */}
-                  <p className="text-xs text-text-tertiary font-mono">
-                    {new Date(key.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </p>
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    {key.active ? (
-                      <button onClick={() => revokeKey(key.id)}
-                        className="text-xs text-text-tertiary hover:text-danger transition-colors font-mono border border-transparent hover:border-danger/30 px-2 py-1 rounded">
-                        revoke
-                      </button>
-                    ) : (
-                      <button onClick={() => deleteKey(key.id)}
-                        className="text-xs text-text-tertiary hover:text-danger transition-colors font-mono border border-transparent hover:border-danger/30 px-2 py-1 rounded">
-                        delete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Usage note */}
         <div className="rounded-xl border border-border bg-surface p-5">
@@ -332,20 +314,9 @@ export default function ApiKeysPage() {
 
             <div className="space-y-5">
               <div>
-                <label className="block text-xs font-mono text-text-tertiary uppercase tracking-wider mb-2">Key name / owner ID</label>
-                <input
-                  type="text"
-                  value={newKeyName}
-                  onChange={e => { setNewKeyName(e.target.value); setError(''); }}
-                  placeholder="my-vibekit-agent"
-                  className="w-full px-4 py-3 rounded-lg border border-border bg-elevated text-text-primary font-mono text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors"
-                />
-              </div>
-
-              <div>
                 <label className="block text-xs font-mono text-text-tertiary uppercase tracking-wider mb-2">Tier</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(['free', 'pro', 'enterprise'] as const).map(tier => (
+                  {(['free', 'builder', 'protocol'] as const).map(tier => (
                     <button key={tier} onClick={() => setNewKeyTier(tier)}
                       className={`py-2.5 rounded-lg border text-xs font-mono font-medium transition-all duration-150 capitalize ${
                         newKeyTier === tier
@@ -355,11 +326,6 @@ export default function ApiKeysPage() {
                       {tier}
                     </button>
                   ))}
-                </div>
-                <div className="mt-2 px-3 py-2 rounded-md bg-elevated border border-border">
-                  <p className="text-xs text-text-secondary font-mono">
-                    {TIER_LIMITS[newKeyTier].monthly.toLocaleString()} sims/month · {TIER_LIMITS[newKeyTier].perMinute}/min
-                  </p>
                 </div>
               </div>
 

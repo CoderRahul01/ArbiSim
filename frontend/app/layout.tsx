@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
 import './globals.css';
+import Providers from './Providers';
 
 // Sans: Geist is the "new cool for developer tools" (Vercel).
 // Inter is the fallback — tall x-height, still the king of UI.
@@ -57,7 +58,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${inter.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
-      <body style={{ fontFamily: 'var(--font-sans, system-ui, sans-serif)' }}>{children}</body>
+      <body style={{ fontFamily: 'var(--font-sans, system-ui, sans-serif)' }}>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
