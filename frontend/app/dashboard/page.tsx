@@ -27,7 +27,7 @@ function useLiveStats(): LiveStats {
 
   useEffect(() => {
     const key = typeof window !== 'undefined'
-      ? (localStorage.getItem('arbisim_api_key') || '')
+      ? (localStorage.getItem('arbisim_api_key') || '').trim().replace(/[^\x20-\x7E]/g, '')
       : '';
     if (!key) return;
 
@@ -47,7 +47,7 @@ function useAnalytics(): AnalyticsData | null {
 
   useEffect(() => {
     const key = typeof window !== 'undefined'
-      ? (localStorage.getItem('arbisim_api_key') || '')
+      ? (localStorage.getItem('arbisim_api_key') || '').trim().replace(/[^\x20-\x7E]/g, '')
       : '';
     if (!key) return;
 

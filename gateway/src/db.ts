@@ -106,6 +106,17 @@ export async function initDb(): Promise<void> {
     await client.query(
       'CREATE INDEX IF NOT EXISTS webhooks_key_idx ON webhooks (api_key_id) WHERE active = TRUE'
     );
+ 
+    // Create verified_payments table to prevent replay/double-spend attacks
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS verified_payments (
+        tx_hash       VARCHAR(66) PRIMARY KEY,
+        user_address  VARCHAR(42) NOT NULL,
+        tier          VARCHAR(20) NOT NULL,
+        amount        VARCHAR(30) NOT NULL,
+        verified_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
 
     await client.query('COMMIT');
     console.log('PostgreSQL schemas initialized successfully.');
@@ -378,5 +389,29 @@ export async function getWebhooksForKey(apiKeyId: string): Promise<WebhookRow[]>
     [apiKeyId]
   );
   return res.rows;
+}
+
+// ── Web3 Verified Payments helpers (to prevent replay attacks) ──────────────
+
+export async function isPaymentVerified(txHash: string): Promise<boolean> {
+  const res = await pgPool.query(
+    'SELECT 1 FROM verified_payments WHERE tx_hash = $1 LIMIT 1',
+    [txHash.toLowerCase()]
+  );
+  return res.rows.length > 0;
+}
+
+export async function recordPayment(
+  txHash: string,
+  userAddress: string,
+  tier: string,
+  amount: string
+): Promise<void> {
+  await pgPool.query(
+    `INSERT INTO verified_payments (tx_hash, user_address, tier, amount)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (tx_hash) DO NOTHING`,
+    [txHash.toLowerCase(), userAddress.toLowerCase(), tier.toLowerCase(), amount]
+  );
 }
 

@@ -136,7 +136,7 @@ export default function SimulationExplorerPage() {
   // Try to get API key from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('arbisim_api_key');
-    if (stored) setApiKey(stored);
+    if (stored) setApiKey(stored.trim().replace(/[^\x20-\x7E]/g, ''));
   }, []);
 
   useEffect(() => {
@@ -178,8 +178,9 @@ export default function SimulationExplorerPage() {
             type="text"
             placeholder="ask_free_••••••••••••"
             onChange={e => {
-              setApiKey(e.target.value);
-              localStorage.setItem('arbisim_api_key', e.target.value);
+              const val = e.target.value.replace(/[^\x20-\x7E]/g, '');
+              setApiKey(val);
+              localStorage.setItem('arbisim_api_key', val);
             }}
             className="w-full px-4 py-3 rounded-lg border border-border bg-surface text-text-primary font-mono text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors"
           />

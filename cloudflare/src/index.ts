@@ -162,6 +162,70 @@ export default {
       }
     }
 
+    // ── User Billing & Tiers ───────────────────────────────────────────────
+    if (url.pathname === '/api/v1/billing/tier' && request.method === 'GET') {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader?.startsWith('Bearer ')) {
+        return jsonError(401, 'UNAUTHORIZED', 'Missing bearer token.', origin);
+      }
+      const token = authHeader.replace('Bearer ', '');
+      const isValid = await jwt.verify(token, env.JWT_SECRET || 'default_dev_secret');
+      if (!isValid) return jsonError(401, 'UNAUTHORIZED', 'Invalid or expired token.', origin);
+      
+      const decoded = jwt.decode(token) as { payload: { address: string } };
+      const address = decoded.payload.address.toLowerCase();
+
+      const userTier = (await env.API_KEYS.get(`user_tier:${address}`)) ?? 'free';
+      return new Response(JSON.stringify({ tier: userTier }), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+      });
+    }
+
+    if (url.pathname === '/api/v1/billing/upgrade' && request.method === 'POST') {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader?.startsWith('Bearer ')) {
+        return jsonError(401, 'UNAUTHORIZED', 'Missing bearer token.', origin);
+      }
+      const token = authHeader.replace('Bearer ', '');
+      const isValid = await jwt.verify(token, env.JWT_SECRET || 'default_dev_secret');
+      if (!isValid) return jsonError(401, 'UNAUTHORIZED', 'Invalid or expired token.', origin);
+      
+      const decoded = jwt.decode(token) as { payload: { address: string } };
+      const address = decoded.payload.address.toLowerCase();
+
+      try {
+        const { txHash, tier } = await request.json() as { txHash: string; tier: string };
+        if (!txHash || !tier) {
+          return jsonError(400, 'BAD_REQUEST', 'Missing txHash or tier.', origin);
+        }
+
+        // Forward verification to Gateway
+        const targetUrl = env.GATEWAY_URL.replace(/\/$/, '') + '/admin/verify-upgrade';
+        const verifyResp = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': env.ADMIN_API_KEY,
+          },
+          body: JSON.stringify({ address, txHash, tier }),
+        });
+
+        if (!verifyResp.ok) {
+          const errData = await verifyResp.json().catch(() => ({})) as any;
+          return jsonError(verifyResp.status, 'UPGRADE_FAILED', errData?.error?.message ?? 'Failed to verify transaction.', origin);
+        }
+
+        // Transaction verified successfully! Store the updated tier in KV
+        await env.API_KEYS.put(`user_tier:${address}`, tier);
+
+        return new Response(JSON.stringify({ success: true, tier }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+        });
+      } catch (err: any) {
+        return jsonError(500, 'INTERNAL_ERROR', err.message || 'Upgrade failed.', origin);
+      }
+    }
+
     // ── User API Keys Management ───────────────────────────────────────────
     if (url.pathname.startsWith('/api/v1/keys')) {
       const authHeader = request.headers.get('Authorization');
@@ -179,6 +243,26 @@ export default {
         const { tier, name } = await request.json() as any;
         const validTiers = ['free', 'builder', 'protocol', 'admin'];
         if (!validTiers.includes(tier)) return jsonError(400, 'BAD_REQUEST', 'Invalid tier.', origin);
+
+        const userTier = (await env.API_KEYS.get(`user_tier:${address.toLowerCase()}`)) ?? 'free';
+        const tierHierarchy: Record<string, number> = {
+          free: 0,
+          builder: 1,
+          protocol: 2,
+          admin: 3
+        };
+
+        const requestedTierValue = tierHierarchy[tier] ?? 0;
+        const userTierValue = tierHierarchy[userTier] ?? 0;
+
+        if (requestedTierValue > userTierValue) {
+          return jsonError(
+            403,
+            'INSUFFICIENT_TIER',
+            `Your account tier (${userTier}) is not allowed to create a ${tier} key. Upgrade your account first.`,
+            origin
+          );
+        }
 
         // Generate key
         const rand = Array.from(crypto.getRandomValues(new Uint8Array(16)))

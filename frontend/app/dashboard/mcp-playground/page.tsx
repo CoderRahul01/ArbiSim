@@ -53,7 +53,7 @@ function JsonBlock({ data, label }: { data: unknown; label: string }) {
 }
 
 export default function McpPlaygroundPage() {
-  const [apiKey,       setApiKey]       = useState(() => typeof window !== 'undefined' ? localStorage.getItem('arbisim_api_key') ?? '' : '');
+  const [apiKey,       setApiKey]       = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') ?? '').trim().replace(/[^\x20-\x7E]/g, '') : '');
   const [network,      setNetwork]      = useState('arbitrum-one');
   const [agentAddress, setAgentAddress] = useState('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
   const [txPayload,    setTxPayload]    = useState(EXAMPLE_PAYLOAD);
@@ -207,7 +207,11 @@ export default function McpPlaygroundPage() {
                 <div>
                   <label className="block text-xs font-mono text-text-tertiary uppercase tracking-wider mb-1.5">API Key</label>
                   <input type="password" value={apiKey}
-                    onChange={e => { setApiKey(e.target.value); if (typeof window !== 'undefined') localStorage.setItem('arbisim_api_key', e.target.value); }}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^\x20-\x7E]/g, '');
+                      setApiKey(val);
+                      if (typeof window !== 'undefined') localStorage.setItem('arbisim_api_key', val);
+                    }}
                     placeholder="ask_free_••••••••"
                     className="w-full px-3 py-2.5 rounded-lg border border-border bg-elevated text-text-primary font-mono text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors" />
                 </div>
