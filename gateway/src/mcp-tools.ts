@@ -6,7 +6,10 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { getSimulation, getMongoDb, createBacktest, getBacktest } from './db.js';
+import {
+  getSimulation, getMongoDb, createBacktest, getBacktest,
+  createAgentSession, getAgentSession, appendSessionSimulation, completeAgentSession,
+} from './db.js';
 import { submitSimulationJob } from './queue.js';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
@@ -20,7 +23,7 @@ export const MCP_TOOLS = [
       properties: {
         network: {
           type: 'string',
-          enum: ['arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet'],
+          enum: ['arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet', 'ethereum', 'bnb', 'avalanche'],
           description: 'Target blockchain network',
         },
         agent_address: {
@@ -115,6 +118,57 @@ export const MCP_TOOLS = [
         },
       },
       required: ['backtest_id'],
+    },
+  },
+  {
+    name: 'agent_session_start',
+    description: 'Start an agent training session. Returns a session_id that pins a fork block for reproducible sequential simulations over the next 24 hours.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent_address: { type: 'string', description: 'EVM wallet address of the agent (0x-prefixed)' },
+        chain: {
+          type: 'string',
+          enum: ['arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet', 'ethereum', 'bnb', 'avalanche'],
+          description: 'Chain to fork for this session (default: arbitrum-one)',
+        },
+        fork_block: { type: 'number', description: 'Optional block number to pin the fork at. Defaults to latest.' },
+      },
+      required: ['agent_address'],
+    },
+  },
+  {
+    name: 'agent_session_simulate',
+    description: 'Run a simulation within an active agent training session. Appends to the sequential experiment log and updates cumulative P&L.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'UUID returned by agent_session_start' },
+        transaction: {
+          type: 'object',
+          description: 'Single transaction to simulate',
+          properties: {
+            to:       { type: 'string' },
+            data:     { type: 'string' },
+            value:    { type: 'string' },
+            gasLimit: { type: 'string' },
+          },
+          required: ['to', 'data', 'value'],
+        },
+        max_slippage_tolerance: { type: 'number', description: 'Max slippage tolerance %' },
+      },
+      required: ['session_id', 'transaction'],
+    },
+  },
+  {
+    name: 'agent_session_end',
+    description: 'End an agent training session and receive full analytics: success rate, Sharpe ratio, max drawdown, most common risk flag, gas saved.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'UUID returned by agent_session_start' },
+      },
+      required: ['session_id'],
     },
   },
 ];
@@ -228,6 +282,141 @@ export async function callMcpTool(
       };
     } catch (err: any) {
       return { error: { code: -32603, message: `Error fetching backtest: ${err.message}` } };
+    }
+  }
+
+  if (name === 'agent_session_start') {
+    const { agent_address, chain = 'arbitrum-one', fork_block } = args as any;
+    if (!agent_address) return { error: { code: -32602, message: 'agent_address is required' } };
+    if (!apiKeyId) return { error: { code: -32602, message: 'API key required for agent sessions' } };
+    try {
+      const row = await createAgentSession(apiKeyId, agent_address, chain, fork_block);
+      return {
+        result: {
+          session_id: row.session_id,
+          chain: row.chain,
+          fork_block: row.fork_block,
+          expires_at: row.expires_at,
+          message: 'Session started. Use agent_session_simulate to run experiments, agent_session_end to get analytics.',
+        },
+      };
+    } catch (err: any) {
+      return { error: { code: -32603, message: `Failed to start session: ${err.message}` } };
+    }
+  }
+
+  if (name === 'agent_session_simulate') {
+    const { session_id, transaction, max_slippage_tolerance = 1.0 } = args as any;
+    if (!session_id || !transaction) return { error: { code: -32602, message: 'session_id and transaction are required' } };
+    try {
+      const sess = await getAgentSession(session_id);
+      if (!sess) return { error: { code: -32602, message: `Session ${session_id} not found` } };
+      if (sess.status !== 'active') return { error: { code: -32602, message: `Session is ${sess.status}, not active` } };
+      if (new Date() > new Date(sess.expires_at)) return { error: { code: -32602, message: 'Session has expired' } };
+
+      const jobId = uuidv4();
+      await submitSimulationJob(jobId, sess.chain, sess.agent_address, [transaction], max_slippage_tolerance, sess.api_key_id);
+
+      // Poll for completion (up to 30s)
+      let simResult: any = null;
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => (globalThis as any).setTimeout(r, 500));
+        const pgRecord = await getSimulation(jobId);
+        if (pgRecord && ['APPROVED', 'REJECTED', 'FAILED'].includes(pgRecord.status)) {
+          let telemetry: any = null;
+          try {
+            telemetry = await getMongoDb().collection('telemetry').findOne({ session_id: jobId });
+          } catch {}
+          simResult = { pgRecord, telemetry: telemetry || pgRecord.telemetry };
+          break;
+        }
+      }
+
+      if (!simResult) return { error: { code: -32603, message: 'Simulation timed out after 30s' } };
+
+      const { pgRecord, telemetry } = simResult;
+      const pnlUsd = telemetry ? parseFloat(telemetry.net_pnl_usd ?? '0') : 0;
+      const gasL2 = telemetry?.gas_breakdown?.l2_gas_used ?? 0;
+      const gasL1 = telemetry?.gas_breakdown?.l1_gas_buffer ?? null;
+      const flags: Record<string, boolean> = telemetry ? {
+        execution_reverted: !!telemetry.revert_reason,
+        high_slippage: parseFloat(telemetry.slippage_detected ?? '0') > 2,
+        sandwich_detected: (telemetry.timeboost_mev_telemetry?.mev_sandwich_risk_score ?? 0) > 0.5,
+      } : {};
+
+      const simRow = await appendSessionSimulation(
+        session_id, jobId, pgRecord.status, gasL2, gasL1 ? Math.round(gasL1) : null, pnlUsd, flags
+      );
+
+      return {
+        result: {
+          sequence_num: simRow.sequence_num,
+          job_id: jobId,
+          outcome: pgRecord.status,
+          pnl_usd: pnlUsd.toFixed(2),
+          gas_l2: gasL2,
+          risk_flags: flags,
+        },
+      };
+    } catch (err: any) {
+      return { error: { code: -32603, message: `Session simulate failed: ${err.message}` } };
+    }
+  }
+
+  if (name === 'agent_session_end') {
+    const { session_id } = args as any;
+    if (!session_id) return { error: { code: -32602, message: 'session_id is required' } };
+    try {
+      const { session, sims } = await completeAgentSession(session_id);
+      const total = sims.length;
+      const approved = sims.filter(s => s.outcome === 'APPROVED').length;
+      const successRate = total > 0 ? approved / total : 0;
+
+      const pnls = sims.map(s => parseFloat(s.pnl_usd ?? '0'));
+      let sharpeRatio: number | null = null;
+      if (total >= 5) {
+        const mean = pnls.reduce((a, b) => a + b, 0) / total;
+        const variance = pnls.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total;
+        const stddev = Math.sqrt(variance);
+        sharpeRatio = stddev > 0 ? (mean / stddev) * Math.sqrt(total) : 0;
+      }
+
+      let maxDrawdown = 0;
+      let peak = 0;
+      let running = 0;
+      for (const pnl of pnls) {
+        running += pnl;
+        if (running > peak) peak = running;
+        const dd = peak - running;
+        if (dd > maxDrawdown) maxDrawdown = dd;
+      }
+
+      const flagCounts: Record<string, number> = {};
+      for (const sim of sims) {
+        if (sim.risk_flags) {
+          for (const [flag, active] of Object.entries(sim.risk_flags as Record<string, boolean>)) {
+            if (active) flagCounts[flag] = (flagCounts[flag] ?? 0) + 1;
+          }
+        }
+      }
+      const mostCommonFlag = Object.entries(flagCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+      return {
+        result: {
+          session_id,
+          chain: session.chain,
+          sim_count: total,
+          success_rate: parseFloat((successRate * 100).toFixed(1)),
+          cumulative_pnl_usd: parseFloat(session.cumulative_pnl_usd),
+          total_gas_saved_usd: parseFloat(session.total_gas_saved_usd),
+          sharpe_ratio: sharpeRatio !== null ? parseFloat(sharpeRatio.toFixed(4)) : null,
+          max_drawdown_usd: parseFloat(maxDrawdown.toFixed(2)),
+          most_common_flag: mostCommonFlag,
+          completed_at: session.completed_at,
+        },
+      };
+    } catch (err: any) {
+      return { error: { code: -32603, message: `Failed to end session: ${err.message}` } };
     }
   }
 

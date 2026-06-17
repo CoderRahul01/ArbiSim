@@ -51,6 +51,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: '/dashboard/explorer',
+    label: 'Trace Explorer',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="6.5" cy="6.5" r="4" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M10 10l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/mcp-playground',
     label: 'MCP Playground',
     icon: (

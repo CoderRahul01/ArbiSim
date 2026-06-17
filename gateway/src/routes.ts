@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { ethers } from 'ethers';
-import { getSimulation, getMongoDb, updateSimulationStatusAndTelemetry, pgPool, listSimulations } from './db.js';
+import {
+  getSimulation, getMongoDb, updateSimulationStatusAndTelemetry, pgPool, listSimulations,
+  createAgentSession, getAgentSession, appendSessionSimulation, completeAgentSession,
+} from './db.js';
 import { submitSimulationJob } from './queue.js';
 import { MCP_TOOLS, callMcpTool } from './mcp-tools.js';
 
@@ -126,8 +129,8 @@ router.post('/simulate', async (req: Request, res: Response): Promise<void> => {
   const { network, agent_address, transactions, max_slippage_tolerance, userOp, entrypointVersion } = req.body;
 
   // Validation
-  if (!network || !['arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet'].includes(network)) {
-    res.status(400).json({ error: "Invalid 'network'. Must be one of 'arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet'" });
+  if (!network || !['arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet', 'ethereum', 'bnb', 'avalanche'].includes(network)) {
+    res.status(400).json({ error: "Invalid 'network'. Must be one of 'arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet', 'ethereum', 'bnb', 'avalanche'" });
     return;
   }
 
@@ -663,6 +666,169 @@ router.get('/analytics', async (req: Request, res: Response): Promise<void> => {
   } catch (error) {
     console.error('Failed to query analytics:', error);
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch analytics.' } });
+  }
+});
+
+// ── Agent Training Sessions ────────────────────────────────────────────────
+
+router.post('/sessions/start', async (req: Request, res: Response): Promise<void> => {
+  const apiKeyId = (req as any).apiKeyId as string | undefined;
+  if (!apiKeyId) { res.status(401).json({ error: 'API key required' }); return; }
+
+  const { agent_address, chain = 'arbitrum-one', fork_block } = req.body;
+  if (!agent_address || typeof agent_address !== 'string' || !agent_address.startsWith('0x')) {
+    res.status(400).json({ error: "Invalid 'agent_address'" }); return;
+  }
+  const validChains = ['arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet', 'ethereum', 'bnb', 'avalanche'];
+  if (!validChains.includes(chain)) {
+    res.status(400).json({ error: `Invalid 'chain'. Must be one of: ${validChains.join(', ')}` }); return;
+  }
+
+  try {
+    const row = await createAgentSession(apiKeyId, agent_address, chain, fork_block);
+    res.status(201).json({
+      session_id: row.session_id,
+      chain: row.chain,
+      fork_block: row.fork_block,
+      expires_at: row.expires_at,
+    });
+  } catch (err) {
+    console.error('Failed to create agent session:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/sessions/:sessionId/simulate', async (req: Request, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+  const { transaction, max_slippage_tolerance = 1.0 } = req.body;
+
+  if (!transaction?.to || !transaction?.data || transaction?.value === undefined) {
+    res.status(400).json({ error: 'transaction.to, transaction.data, and transaction.value are required' }); return;
+  }
+
+  try {
+    const sess = await getAgentSession(sessionId);
+    if (!sess) { res.status(404).json({ error: `Session ${sessionId} not found` }); return; }
+    if (sess.status !== 'active') { res.status(409).json({ error: `Session is ${sess.status}` }); return; }
+    if (new Date() > new Date(sess.expires_at)) { res.status(410).json({ error: 'Session expired' }); return; }
+
+    const { submitSimulationJob } = await import('./queue.js');
+    const jobId = uuidv4();
+    await submitSimulationJob(jobId, sess.chain, sess.agent_address, [transaction], max_slippage_tolerance, sess.api_key_id);
+
+    // Poll up to 30 seconds
+    let pgRecord: any = null;
+    let telemetry: any = null;
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => (globalThis as any).setTimeout(r, 500));
+      pgRecord = await getSimulation(jobId);
+      if (pgRecord && ['APPROVED', 'REJECTED', 'FAILED'].includes(pgRecord.status)) {
+        try { telemetry = await getMongoDb().collection('telemetry').findOne({ session_id: jobId }); } catch {}
+        telemetry = telemetry || pgRecord.telemetry;
+        break;
+      }
+    }
+
+    if (!pgRecord) { res.status(504).json({ error: 'Simulation timed out' }); return; }
+
+    const pnlUsd = parseFloat(telemetry?.net_pnl_usd ?? '0');
+    const gasL2 = telemetry?.gas_breakdown?.l2_gas_used ?? 0;
+    const gasL1 = telemetry?.gas_breakdown?.l1_gas_buffer ?? null;
+    const flags: Record<string, boolean> = telemetry ? {
+      execution_reverted: !!telemetry.revert_reason,
+      high_slippage: parseFloat(telemetry.slippage_detected ?? '0') > 2,
+      sandwich_detected: (telemetry.timeboost_mev_telemetry?.mev_sandwich_risk_score ?? 0) > 0.5,
+    } : {};
+
+    const simRow = await appendSessionSimulation(
+      sessionId, jobId, pgRecord.status, gasL2, gasL1 ? Math.round(gasL1) : null, pnlUsd, flags
+    );
+
+    res.json({
+      sequence_num: simRow.sequence_num,
+      job_id: jobId,
+      outcome: pgRecord.status,
+      pnl_usd: pnlUsd.toFixed(2),
+      gas_l2: gasL2,
+      risk_flags: flags,
+    });
+  } catch (err) {
+    console.error('Session simulate error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/sessions/:sessionId/end', async (req: Request, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+  try {
+    const check = await getAgentSession(sessionId);
+    if (!check) { res.status(404).json({ error: `Session ${sessionId} not found` }); return; }
+
+    const { session, sims } = await completeAgentSession(sessionId);
+    const total = sims.length;
+    const approved = sims.filter(s => s.outcome === 'APPROVED').length;
+    const successRate = total > 0 ? approved / total : 0;
+
+    const pnls = sims.map(s => parseFloat(String(s.pnl_usd ?? '0')));
+    let sharpeRatio: number | null = null;
+    if (total >= 5) {
+      const mean = pnls.reduce((a, b) => a + b, 0) / total;
+      const variance = pnls.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total;
+      const stddev = Math.sqrt(variance);
+      sharpeRatio = stddev > 0 ? (mean / stddev) * Math.sqrt(total) : 0;
+    }
+
+    let maxDrawdown = 0;
+    let peak = 0;
+    let running = 0;
+    for (const pnl of pnls) {
+      running += pnl;
+      if (running > peak) peak = running;
+      const dd = peak - running;
+      if (dd > maxDrawdown) maxDrawdown = dd;
+    }
+
+    const flagCounts: Record<string, number> = {};
+    for (const sim of sims) {
+      if (sim.risk_flags) {
+        for (const [flag, active] of Object.entries(sim.risk_flags as Record<string, boolean>)) {
+          if (active) flagCounts[flag] = (flagCounts[flag] ?? 0) + 1;
+        }
+      }
+    }
+    const mostCommonFlag = Object.entries(flagCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+    res.json({
+      session_id: sessionId,
+      chain: session.chain,
+      sim_count: total,
+      success_rate: parseFloat((successRate * 100).toFixed(1)),
+      cumulative_pnl_usd: parseFloat(String(session.cumulative_pnl_usd)),
+      total_gas_saved_usd: parseFloat(String(session.total_gas_saved_usd)),
+      sharpe_ratio: sharpeRatio !== null ? parseFloat(sharpeRatio.toFixed(4)) : null,
+      max_drawdown_usd: parseFloat(maxDrawdown.toFixed(2)),
+      most_common_flag: mostCommonFlag,
+      completed_at: session.completed_at,
+    });
+  } catch (err) {
+    console.error('Session end error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/sessions/:sessionId/report', async (req: Request, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+  try {
+    const session = await getAgentSession(sessionId);
+    if (!session) { res.status(404).json({ error: `Session ${sessionId} not found` }); return; }
+    const simsRes = await pgPool.query(
+      'SELECT * FROM session_simulations WHERE session_id = $1 ORDER BY sequence_num ASC',
+      [sessionId]
+    );
+    res.json({ session, simulations: simsRes.rows });
+  } catch (err) {
+    console.error('Session report error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

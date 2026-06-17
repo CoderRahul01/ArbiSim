@@ -118,6 +118,45 @@ export async function initDb(): Promise<void> {
       )
     `);
 
+    // Agent training session tables
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS agent_sessions (
+        session_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        api_key_id    TEXT NOT NULL,
+        agent_address TEXT NOT NULL,
+        chain         TEXT NOT NULL DEFAULT 'arbitrum-one',
+        fork_block    BIGINT,
+        status        TEXT NOT NULL DEFAULT 'active',
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at    TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
+        completed_at  TIMESTAMPTZ,
+        sim_count     INT NOT NULL DEFAULT 0,
+        cumulative_pnl_usd    NUMERIC(20,6) NOT NULL DEFAULT 0,
+        total_gas_saved_usd   NUMERIC(20,6) NOT NULL DEFAULT 0
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS agent_sessions_key_idx ON agent_sessions (api_key_id, status)`
+    );
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS session_simulations (
+        id            SERIAL PRIMARY KEY,
+        session_id    UUID NOT NULL REFERENCES agent_sessions(session_id) ON DELETE CASCADE,
+        job_id        TEXT NOT NULL,
+        sequence_num  INT NOT NULL,
+        outcome       TEXT,
+        gas_l2        BIGINT,
+        gas_l1        BIGINT,
+        pnl_usd       NUMERIC(20,6),
+        risk_flags    JSONB,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS session_sims_session_idx ON session_simulations (session_id, sequence_num)`
+    );
+
     await client.query('COMMIT');
     console.log('PostgreSQL schemas initialized successfully.');
   } catch (error) {
@@ -413,5 +452,116 @@ export async function recordPayment(
      ON CONFLICT (tx_hash) DO NOTHING`,
     [txHash.toLowerCase(), userAddress.toLowerCase(), tier.toLowerCase(), amount]
   );
+}
+
+// ── Agent Training Session helpers ─────────────────────────────────────────
+
+export interface AgentSessionRow {
+  session_id: string;
+  api_key_id: string;
+  agent_address: string;
+  chain: string;
+  fork_block: number | null;
+  status: string;
+  created_at: Date;
+  expires_at: Date;
+  completed_at: Date | null;
+  sim_count: number;
+  cumulative_pnl_usd: string;
+  total_gas_saved_usd: string;
+}
+
+export interface SessionSimulationRow {
+  id: number;
+  session_id: string;
+  job_id: string;
+  sequence_num: number;
+  outcome: string | null;
+  gas_l2: number | null;
+  gas_l1: number | null;
+  pnl_usd: string | null;
+  risk_flags: any;
+  created_at: Date;
+}
+
+export async function createAgentSession(
+  apiKeyId: string,
+  agentAddress: string,
+  chain: string,
+  forkBlock?: number
+): Promise<AgentSessionRow> {
+  const res = await pgPool.query(
+    `INSERT INTO agent_sessions (api_key_id, agent_address, chain, fork_block)
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [apiKeyId, agentAddress, chain, forkBlock ?? null]
+  );
+  return res.rows[0];
+}
+
+export async function getAgentSession(sessionId: string): Promise<AgentSessionRow | null> {
+  const res = await pgPool.query('SELECT * FROM agent_sessions WHERE session_id = $1', [sessionId]);
+  return res.rows[0] ?? null;
+}
+
+export async function appendSessionSimulation(
+  sessionId: string,
+  jobId: string,
+  outcome: string,
+  gasL2: number,
+  gasL1: number | null,
+  pnlUsd: number,
+  riskFlags: Record<string, boolean>
+): Promise<SessionSimulationRow> {
+  const client = await pgPool.connect();
+  try {
+    await client.query('BEGIN');
+    const seqRes = await client.query(
+      `SELECT COALESCE(MAX(sequence_num), 0) + 1 AS next_seq FROM session_simulations WHERE session_id = $1`,
+      [sessionId]
+    );
+    const nextSeq: number = seqRes.rows[0].next_seq;
+
+    const simRes = await client.query(
+      `INSERT INTO session_simulations (session_id, job_id, sequence_num, outcome, gas_l2, gas_l1, pnl_usd, risk_flags)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [sessionId, jobId, nextSeq, outcome, gasL2, gasL1 ?? null, pnlUsd, JSON.stringify(riskFlags)]
+    );
+
+    const gasSaved = outcome === 'REJECTED' ? Math.abs(pnlUsd) : 0;
+    await client.query(
+      `UPDATE agent_sessions
+       SET sim_count = sim_count + 1,
+           cumulative_pnl_usd = cumulative_pnl_usd + $1,
+           total_gas_saved_usd = total_gas_saved_usd + $2,
+           updated_at = NOW()
+       WHERE session_id = $3`,
+      [pnlUsd, gasSaved, sessionId]
+    );
+    await client.query('COMMIT');
+    return simRes.rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function completeAgentSession(sessionId: string): Promise<{
+  session: AgentSessionRow;
+  sims: SessionSimulationRow[];
+}> {
+  await pgPool.query(
+    `UPDATE agent_sessions SET status = 'completed', completed_at = NOW() WHERE session_id = $1`,
+    [sessionId]
+  );
+  const sessionRes = await pgPool.query('SELECT * FROM agent_sessions WHERE session_id = $1', [sessionId]);
+  const simsRes = await pgPool.query(
+    'SELECT * FROM session_simulations WHERE session_id = $1 ORDER BY sequence_num ASC',
+    [sessionId]
+  );
+  return { session: sessionRes.rows[0], sims: simsRes.rows };
 }
 

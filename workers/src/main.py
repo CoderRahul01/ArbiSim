@@ -4,7 +4,7 @@ import asyncio
 import asyncpg
 from dotenv import load_dotenv
 
-from simulation_engine import AnvilForkInstance
+from simulation_engine import AnvilForkInstance, ARBITRUM_CHAINS
 from analytical_brain import AnalyticalBrain
 from storage import save_telemetry
 from chain_registry import log_simulation_to_chain
@@ -253,6 +253,7 @@ async def process_job(job: dict) -> None:
 
         brain = AnalyticalBrain(rpc_url)
         transactions = [] if is_user_op else payload.get("transactions", [])
+        is_arbitrum = network in ARBITRUM_CHAINS
 
         # Run simulation in a thread to avoid blocking the event loop
         results = await asyncio.get_event_loop().run_in_executor(
@@ -262,7 +263,8 @@ async def process_job(job: dict) -> None:
                 transactions=transactions,
                 max_slippage=max_slippage,
                 user_op=user_op if is_user_op else None,
-                entrypoint_version=ep_version
+                entrypoint_version=ep_version,
+                is_arbitrum=is_arbitrum
             )
         )
 

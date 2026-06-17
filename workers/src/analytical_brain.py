@@ -150,7 +150,7 @@ ENTRYPOINT_V07_ABI = [
     }
 ]
 
-def analyze_execution_trace(session_id: str, trace_data: dict, rpc_url: str) -> dict:
+def analyze_execution_trace(session_id: str, trace_data: dict, rpc_url: str, is_arbitrum: bool = True) -> dict:
     """
     Main entry function for analyzing EVM transaction trace logs for Stylus WASM Ink,
     Host-to-VM transition points, and Nitro calldata compression buffer costs.
@@ -187,61 +187,61 @@ def analyze_execution_trace(session_id: str, trace_data: dict, rpc_url: str) -> 
                 except Exception:
                     pass
 
-    # 1. Stylus WASM Verification Logic
+    # 1. Stylus WASM Verification Logic (Arbitrum-only)
     stylus_contracts = set()
-    for addr in touched_addresses:
-        try:
-            code = w3.eth.get_code(addr)
-            if code.startswith(b'\xef\xf0\x00'):
-                stylus_contracts.add(addr)
-                print(f"Detected Stylus WASM contract: {addr}")
-        except Exception:
-            pass
-
-    # Trace through call frames to calculate Stylus runtime ink and Host I/O penalties
     total_ink = 0
     host_io_penalty_gas = 0.0
-    
-    call_stack = []
-    if transactions:
-        first_to = Web3.to_checksum_address(transactions[0]["to"]) if transactions[0].get("to") else None
-        if first_to:
-            call_stack.append(first_to)
-            
-    current_addr = call_stack[-1] if call_stack else None
 
-    # Track gas differences between opcodes to count gas used inside WASM runtime
-    for idx, log in enumerate(struct_logs):
-        op = log.get("op", "")
-        
-        # Track call depth / contract execution frame
-        if op in ["CALL", "DELEGATECALL", "STATICCALL", "CALLCODE"] and "stack" in log:
+    if is_arbitrum:
+        for addr in touched_addresses:
             try:
-                target_hex = log["stack"][-2]
-                target_addr = Web3.to_checksum_address("0x" + target_hex[-40:])
-                call_stack.append(target_addr)
-                current_addr = target_addr
+                code = w3.eth.get_code(addr)
+                if code.startswith(b'\xef\xf0\x00'):
+                    stylus_contracts.add(addr)
+                    print(f"Detected Stylus WASM contract: {addr}")
             except Exception:
                 pass
-        elif op in ["RETURN", "STOP", "REVERT", "SELFDESTRUCT"]:
-            if call_stack:
-                call_stack.pop()
-                current_addr = call_stack[-1] if call_stack else None
 
-        # If executing inside a Stylus contract context, apply Stylus metrics
-        if current_addr in stylus_contracts:
-            gas_cost = log.get("gasCost", 0)
-            # 1 EVM Gas = 10,000 Ink units
-            total_ink += int(gas_cost * 10000)
+        # Trace through call frames to calculate Stylus runtime ink and Host I/O penalties
+        call_stack = []
+        if transactions:
+            first_to = Web3.to_checksum_address(transactions[0]["to"]) if transactions[0].get("to") else None
+            if first_to:
+                call_stack.append(first_to)
 
-            # Identify host-to-VM transition points (Host I/O events)
-            if op in ["SLOAD", "SSTORE", "LOG0", "LOG1", "LOG2", "LOG3", "LOG4"]:
-                host_io_penalty_gas += 0.84
-                total_ink += int(0.84 * 10000)
+        current_addr = call_stack[-1] if call_stack else None
 
-    # 2. Nitro Gas Buffers and 2D Fee Equation
+        # Track gas differences between opcodes to count gas used inside WASM runtime
+        for idx, log in enumerate(struct_logs):
+            op = log.get("op", "")
+
+            # Track call depth / contract execution frame
+            if op in ["CALL", "DELEGATECALL", "STATICCALL", "CALLCODE"] and "stack" in log:
+                try:
+                    target_hex = log["stack"][-2]
+                    target_addr = Web3.to_checksum_address("0x" + target_hex[-40:])
+                    call_stack.append(target_addr)
+                    current_addr = target_addr
+                except Exception:
+                    pass
+            elif op in ["RETURN", "STOP", "REVERT", "SELFDESTRUCT"]:
+                if call_stack:
+                    call_stack.pop()
+                    current_addr = call_stack[-1] if call_stack else None
+
+            # If executing inside a Stylus contract context, apply Stylus metrics
+            if current_addr in stylus_contracts:
+                gas_cost = log.get("gasCost", 0)
+                # 1 EVM Gas = 10,000 Ink units
+                total_ink += int(gas_cost * 10000)
+
+                # Identify host-to-VM transition points (Host I/O events)
+                if op in ["SLOAD", "SSTORE", "LOG0", "LOG1", "LOG2", "LOG3", "LOG4"]:
+                    host_io_penalty_gas += 0.84
+                    total_ink += int(0.84 * 10000)
+
+    # 2. Gas Fee Calculation
     total_l2_gas_used = trace_data.get("gas_used", 0)
-    total_l2_fees_wei = 0
     total_l1_buffer_gas = 0.0
 
     try:
@@ -249,31 +249,33 @@ def analyze_execution_trace(session_id: str, trace_data: dict, rpc_url: str) -> 
     except Exception:
         l2_base_fee = w3.eth.gas_price
 
-    for tx in transactions:
-        calldata_hex = tx.get("data", "0x")
-        calldata = calldata_hex[2:] if calldata_hex.startswith("0x") else calldata_hex
-        calldata_bytes = bytes.fromhex(calldata) if calldata else b''
-        
-        if calldata_bytes:
-            try:
-                # Per Arbitrum docs, ArbOS uses a non-standard variant of Brotli
-                # called "brotli-zero" — compression level 0 (fastest), not the
-                # default level 1. The chain itself treats this as an
-                # approximation ("cheap to compute"), then multiplies the
-                # compressed size by 16 (Ethereum's gas-per-non-zero-byte) to
-                # get the L1 calldata buffer. We mirror that exact choice so
-                # our pre-flight estimate matches on-chain settlement.
-                compressed = brotli.compress(calldata_bytes, quality=0)
-                compressed_size = len(compressed)
-            except Exception as e:
-                print(f"Brotli compression failed: {e}. Falling back to uncompressed size.")
-                compressed_size = len(calldata_bytes)
+    if is_arbitrum:
+        # Nitro 2D fee: L1 calldata buffer via brotli-zero compression
+        for tx in transactions:
+            calldata_hex = tx.get("data", "0x")
+            calldata = calldata_hex[2:] if calldata_hex.startswith("0x") else calldata_hex
+            calldata_bytes = bytes.fromhex(calldata) if calldata else b''
 
-            data_footprint = compressed_size * 16
-            l1_gas_buffer = data_footprint / max(l2_base_fee, 1)
-            total_l1_buffer_gas += l1_gas_buffer
+            if calldata_bytes:
+                try:
+                    # Per Arbitrum docs, ArbOS uses a non-standard variant of Brotli
+                    # called "brotli-zero" — compression level 0 (fastest), not the
+                    # default level 1. The chain itself treats this as an
+                    # approximation ("cheap to compute"), then multiplies the
+                    # compressed size by 16 (Ethereum's gas-per-non-zero-byte) to
+                    # get the L1 calldata buffer. We mirror that exact choice so
+                    # our pre-flight estimate matches on-chain settlement.
+                    compressed = brotli.compress(calldata_bytes, quality=0)
+                    compressed_size = len(compressed)
+                except Exception as e:
+                    print(f"Brotli compression failed: {e}. Falling back to uncompressed size.")
+                    compressed_size = len(calldata_bytes)
 
-    # Total Transaction Fee = L2_Gas_Price * (L2_Gas_Used + L1_Calldata_Gas_Buffer)
+                data_footprint = compressed_size * 16
+                l1_gas_buffer = data_footprint / max(l2_base_fee, 1)
+                total_l1_buffer_gas += l1_gas_buffer
+
+    # Total Transaction Fee = Gas_Price * (Gas_Used + L1_Buffer + Host_IO_Penalty)
     l2_gas_price = w3.eth.gas_price
     l2_gas_used_with_penalty = total_l2_gas_used + host_io_penalty_gas
     total_fees_wei = int(l2_gas_price * (l2_gas_used_with_penalty + total_l1_buffer_gas))
@@ -337,37 +339,43 @@ def analyze_execution_trace(session_id: str, trace_data: dict, rpc_url: str) -> 
 
     gas_cost_eth = float(total_fees_wei) / 1e18
 
-    # Extract target and compute MEV/Timeboost analytics
-    first_tx = transactions[0] if transactions else {}
-    calldata_hex = first_tx.get("data", "0x")
-    calldata = calldata_hex[2:] if calldata_hex.startswith("0x") else calldata_hex
-    calldata_bytes = bytes.fromhex(calldata) if calldata else b''
-    target_contract = first_tx.get("to", "0x0000000000000000000000000000000000000000")
-    
-    timeboost_mev_telemetry = evaluate_timeboost_and_mev_risk(calldata_bytes, target_contract, total_l2_gas_used)
+    # Extract target and compute MEV/Timeboost analytics (Arbitrum-only)
+    timeboost_mev_telemetry = None
+    if is_arbitrum:
+        first_tx = transactions[0] if transactions else {}
+        calldata_hex = first_tx.get("data", "0x")
+        calldata = calldata_hex[2:] if calldata_hex.startswith("0x") else calldata_hex
+        calldata_bytes = bytes.fromhex(calldata) if calldata else b''
+        target_contract = first_tx.get("to", "0x0000000000000000000000000000000000000000")
+        timeboost_mev_telemetry = evaluate_timeboost_and_mev_risk(calldata_bytes, target_contract, total_l2_gas_used)
 
     raw_status = trace_data.get("status", "SUCCESS")
     terminal_status = "APPROVED" if raw_status == "SUCCESS" else "REJECTED"
 
-    return {
+    gas_breakdown: dict = {
+        "l2_gas_used": total_l2_gas_used,
+        "total_fees_wei": str(total_fees_wei),
+    }
+    if is_arbitrum:
+        gas_breakdown["host_io_penalty_gas"] = host_io_penalty_gas
+        gas_breakdown["l1_gas_buffer"] = total_l1_buffer_gas
+
+    result: dict = {
         "session_id": session_id,
         "status": terminal_status,
         "gas_cost_eth": f"{gas_cost_eth:.8f}",
-        "stylus_ink_consumed": total_ink,
         "net_pnl_usd": f"{net_pnl_usd:+.2f}",
         "slippage_detected": f"{slippage_pct:.2f}%",
         "revert_reason": trace_data.get("revert_reason"),
         "balance_traces": balance_traces,
         "token_transfers": trace_data.get("token_transfers", []),
-        "gas_breakdown": {
-            "l2_gas_used": total_l2_gas_used,
-            "host_io_penalty_gas": host_io_penalty_gas,
-            "l1_gas_buffer": total_l1_buffer_gas,
-            "total_fees_wei": str(total_fees_wei)
-        },
-        "timeboost_mev_telemetry": timeboost_mev_telemetry,
-        "execution_traces": struct_logs
+        "gas_breakdown": gas_breakdown,
+        "execution_traces": struct_logs,
     }
+    if is_arbitrum:
+        result["stylus_ink_consumed"] = total_ink
+        result["timeboost_mev_telemetry"] = timeboost_mev_telemetry
+    return result
 
 class AnalyticalBrain:
     def __init__(self, rpc_url: str):
@@ -375,7 +383,7 @@ class AnalyticalBrain:
         if not self.w3.is_connected():
             raise RuntimeError(f"Cannot connect to Anvil fork at {rpc_url}")
 
-    def execute_simulation(self, agent_address: str, transactions: list, max_slippage: float, user_op: dict = None, entrypoint_version: str = 'v0.6') -> dict:
+    def execute_simulation(self, agent_address: str, transactions: list, max_slippage: float, user_op: dict = None, entrypoint_version: str = 'v0.6', is_arbitrum: bool = True) -> dict:
         """
         Executes transactions or UserOperations against the local fork, fetches traces, and calls
         analyze_execution_trace to parse internal Nitro & Stylus metrics.
@@ -575,4 +583,4 @@ class AnalyticalBrain:
         }
 
         session_id = "synctest_" + os.urandom(4).hex()
-        return analyze_execution_trace(session_id, trace_data, self.w3.provider.endpoint_uri)
+        return analyze_execution_trace(session_id, trace_data, self.w3.provider.endpoint_uri, is_arbitrum=is_arbitrum)

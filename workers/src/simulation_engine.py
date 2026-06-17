@@ -11,15 +11,24 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../..', '.en
 CHAIN_IDS = {
     "arbitrum-one": 42161,
     "arbitrum-sepolia": 421614,
-    "robinhood-chain-testnet": 46630
+    "robinhood-chain-testnet": 46630,
+    "ethereum": 1,
+    "bnb": 56,
+    "avalanche": 43114,
 }
 
 # Fallback RPC URLs if not provided in environment
 DEFAULT_RPCS = {
     "arbitrum-one": "https://arb1.arbitrum.io/rpc",
     "arbitrum-sepolia": "https://sepolia-rollup.arbitrum.io/rpc",
-    "robinhood-chain-testnet": "https://robinhood-testnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY"
+    "robinhood-chain-testnet": "https://robinhood-testnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+    "ethereum": "https://eth.llamarpc.com",
+    "bnb": "https://bsc-dataseed.binance.org",
+    "avalanche": "https://api.avax.network/ext/bc/C/rpc",
 }
+
+# Chains with Arbitrum Nitro L1 calldata overhead + Stylus WASM support
+ARBITRUM_CHAINS = {"arbitrum-one", "arbitrum-sepolia", "robinhood-chain-testnet"}
 
 def find_free_port(start: int = 8545, end: int = 8600) -> int:
     """Finds an unused local port within the specified range."""
@@ -44,6 +53,7 @@ class AnvilForkInstance:
         # Determine RPC URL
         env_var_name = f"{network.upper().replace('-', '_')}_RPC"
         self.rpc_url = os.getenv(env_var_name, DEFAULT_RPCS[network])
+        self.is_arbitrum = network in ARBITRUM_CHAINS
         
         self.port = None
         self.process = None
