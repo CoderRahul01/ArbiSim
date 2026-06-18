@@ -1,8 +1,11 @@
+import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
+import ShareButton from './ShareButton';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 const ARBISCAN_SEPOLIA = 'https://sepolia.arbiscan.io/address/';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://arbisimguard.com';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +39,24 @@ interface PublicSimResult {
   timeboost?: TimeboostData;
 }
 
+// ── Metadata ────────────────────────────────────────────────────────────────
+
+export async function generateMetadata(
+  { params }: { params: Promise<{ sessionId: string }> }
+): Promise<Metadata> {
+  const { sessionId } = await params;
+  const short = sessionId.slice(0, 8);
+  return {
+    title: `Simulation ${short}… — ArbiSim Guard`,
+    description: 'Pre-flight EVM simulation result — ArbiSim Guard',
+    openGraph: {
+      title: `Simulation result — ArbiSim Guard`,
+      description: 'View this transaction pre-flight simulation result',
+      url: `${SITE_URL}/sim/${sessionId}`,
+    },
+  };
+}
+
 // ── Sub-components ──────────────────────────────────────────────────────────
 
 const DANGEROUS_FLAGS = new Set(['execution_reverted', 'sandwich_detected', 'sig_failed', 'valid_until_expired', 'stylus_ink_overflow']);
@@ -45,9 +66,7 @@ function StatusBadge({ status }: { status: string }) {
     APPROVED: 'bg-teal-950/60 border-teal-600/30 text-teal-300',
     REJECTED: 'bg-red-950/60 border-red-600/30 text-red-300',
   };
-  const icons: Record<string, string> = {
-    APPROVED: '✓', REJECTED: '✗',
-  };
+  const icons: Record<string, string> = { APPROVED: '✓', REJECTED: '✗' };
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-sm font-mono font-medium ${styles[status] ?? 'bg-zinc-900 border-zinc-700 text-zinc-400'}`}>
       {icons[status] ?? '?'} {status}
@@ -72,6 +91,30 @@ function FlagRow({ flagKey, value }: { flagKey: string; value: boolean }) {
   );
 }
 
+function GasBreakdownPanel({ breakdown }: { breakdown: GasBreakdown }) {
+  const totalEth = breakdown.total_fees_wei
+    ? (Number(BigInt(breakdown.total_fees_wei)) / 1e18).toFixed(8)
+    : null;
+  return (
+    <div className="rounded-xl border border-border bg-surface p-6">
+      <h3 className="text-xs font-mono text-text-tertiary uppercase tracking-widest mb-4">Gas breakdown</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+        {[
+          { label: 'L2 gas used',        value: breakdown.l2_gas_used?.toLocaleString() ?? '—' },
+          { label: 'L1 buffer',          value: breakdown.l1_gas_buffer?.toLocaleString() ?? '—' },
+          { label: 'Host I/O penalty',   value: breakdown.host_io_penalty_gas?.toLocaleString() ?? '—' },
+          { label: 'Total fees',         value: totalEth ? `${totalEth} ETH` : '—' },
+        ].map(({ label, value }) => (
+          <div key={label}>
+            <p className="text-xs text-text-tertiary">{label}</p>
+            <p className="font-mono text-text-primary mt-0.5">{value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Server Component ────────────────────────────────────────────────────────
 
 export default async function PublicSimPage({ params }: { params: Promise<{ sessionId: string }> }) {
@@ -87,10 +130,10 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
     if (res.ok) {
       sim = await res.json() as PublicSimResult;
     } else {
-      const err = await res.json().catch(() => ({})) as any;
+      const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
       fetchError = err?.error?.message ?? `Simulation not found (HTTP ${res.status})`;
     }
-  } catch (err) {
+  } catch {
     fetchError = 'Unable to reach the ArbiSim Guard API.';
   }
 
@@ -144,10 +187,10 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
             {/* Stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                { label: 'Verdict', value: sim.status },
-                { label: 'Gas cost', value: sim.gasCostEth ? `${sim.gasCostEth} ETH` : '—' },
-                { label: 'Slippage', value: sim.slippagePercent != null ? `${sim.slippagePercent.toFixed(2)}%` : '—' },
-                { label: 'Net P&L', value: sim.netPnlUsd ?? '—' },
+                { label: 'Gas cost',     value: sim.gasCostEth ? `${sim.gasCostEth} ETH` : '—' },
+                { label: 'Slippage',     value: sim.slippagePercent != null ? `${sim.slippagePercent.toFixed(2)}%` : '—' },
+                { label: 'Net P&L',      value: sim.netPnlUsd ?? '—' },
+                { label: 'Stylus ink',   value: sim.stylusInkConsumed != null ? sim.stylusInkConsumed.toLocaleString() : '—' },
               ].map(s => (
                 <div key={s.label} className="rounded-lg border border-border bg-surface px-4 py-3">
                   <p className="text-xs text-text-tertiary font-mono uppercase tracking-wider mb-1">{s.label}</p>
@@ -162,6 +205,9 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
                 <p className="text-sm font-mono text-red-300">{sim.revertReason}</p>
               </div>
             )}
+
+            {/* Gas breakdown */}
+            {sim.gasBreakdown && <GasBreakdownPanel breakdown={sim.gasBreakdown} />}
 
             {/* Flags grid */}
             {sim.flags && (
@@ -190,12 +236,15 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
                   This simulation was independently verified by ArbiSim Guard.
                 </p>
               </div>
-              <Link
-                href="/dashboard"
-                className="px-5 py-2.5 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 shadow-lg shadow-coral/25 shrink-0"
-              >
-                Run your own simulation →
-              </Link>
+              <div className="flex items-center gap-3 shrink-0">
+                <ShareButton sessionId={sessionId} siteUrl={SITE_URL} />
+                <Link
+                  href="/dashboard"
+                  className="px-5 py-2.5 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 shadow-lg shadow-coral/25"
+                >
+                  Run your own →
+                </Link>
+              </div>
             </div>
           </div>
         ) : null}
