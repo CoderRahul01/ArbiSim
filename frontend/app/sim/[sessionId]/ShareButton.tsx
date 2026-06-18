@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 
-export default function ShareButton({ sessionId, siteUrl }: { sessionId: string; siteUrl: string }) {
+export default function ShareButton({ sessionId }: { sessionId: string }) {
   const [copied, setCopied] = useState(false);
-  const url = `${siteUrl}/sim/${sessionId}`;
+  const url = typeof window !== 'undefined'
+    ? `${window.location.origin}/sim/${sessionId}`
+    : `/sim/${sessionId}`;
 
   const copy = () => {
     navigator.clipboard.writeText(url).then(() => {

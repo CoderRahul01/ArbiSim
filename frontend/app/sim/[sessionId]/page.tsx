@@ -5,7 +5,6 @@ import ShareButton from './ShareButton';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 const ARBISCAN_SEPOLIA = 'https://sepolia.arbiscan.io/address/';
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://arbisimguard.com';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -52,7 +51,6 @@ export async function generateMetadata(
     openGraph: {
       title: `Simulation result — ArbiSim Guard`,
       description: 'View this transaction pre-flight simulation result',
-      url: `${SITE_URL}/sim/${sessionId}`,
     },
   };
 }
@@ -237,7 +235,7 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <ShareButton sessionId={sessionId} siteUrl={SITE_URL} />
+                <ShareButton sessionId={sessionId} />
                 <Link
                   href="/dashboard"
                   className="px-5 py-2.5 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 shadow-lg shadow-coral/25"
