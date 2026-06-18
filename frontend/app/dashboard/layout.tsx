@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAccount, useDisconnect } from 'wagmi';
 import { useAppKit } from '@reown/appkit/react';
+import DashboardToasts from '@/components/DashboardToasts';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -92,39 +93,15 @@ const NAV_ITEMS = [
   },
 ];
 
-function useQuotaAlert() {
-  const [alert, setAlert] = useState<{ level: 'warn' | 'critical' | null; pct: number }>({ level: null, pct: 0 });
-
-  useEffect(() => {
-    const dismissed = sessionStorage.getItem('arbisim_quota_alert_dismissed');
-    if (dismissed) return;
-
-    const key = (localStorage.getItem('arbisim_api_key') ?? '').trim().replace(/[^\x20-\x7E]/g, '');
-    if (!key) return;
-
-    fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
-      .then(r => r.ok ? r.json() : null)
-      .then((data: { quota_used?: number; quota_limit?: number } | null) => {
-        if (!data?.quota_limit) return;
-        const pct = Math.round((data.quota_used ?? 0) / data.quota_limit * 100);
-        if (pct >= 100) setAlert({ level: 'critical', pct });
-        else if (pct >= 80) setAlert({ level: 'warn', pct });
-      })
-      .catch(() => {});
-  }, []);
-
-  return alert;
-}
-
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { open } = useAppKit();
-  const quotaAlert = useQuotaAlert();
-  const [alertDismissed, setAlertDismissed] = useState(false);
   const [jwt, setJwt] = useState<string | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [quotaUsed, setQuotaUsed] = useState(0);
+  const [quotaLimit, setQuotaLimit] = useState(500);
 
   useEffect(() => {
     const checkAuth = () => {
@@ -154,10 +131,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => clearInterval(interval);
   }, []);
 
-  function dismissAlert() {
-    sessionStorage.setItem('arbisim_quota_alert_dismissed', '1');
-    setAlertDismissed(true);
-  }
+  useEffect(() => {
+    const key = (localStorage.getItem('arbisim_api_key') ?? '').trim().replace(/[^\x20-\x7E]/g, '');
+    if (!key) return;
+    fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { quota_used?: number; quota_limit?: number } | null) => {
+        if (!d) return;
+        setQuotaUsed(d.quota_used ?? 0);
+        setQuotaLimit(d.quota_limit ?? 500);
+      })
+      .catch(() => {});
+  }, [jwt]);
 
   function isActive(href: string) {
     if (href === '/dashboard') return pathname === '/dashboard';
@@ -224,25 +209,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-base flex flex-col">
-      {/* Quota alert banner */}
-      {!alertDismissed && quotaAlert.level && (
-        <div className={`flex items-center justify-between px-5 py-2.5 text-xs font-medium ${
-          quotaAlert.level === 'critical'
-            ? 'bg-danger/10 border-b border-danger/30 text-danger'
-            : 'bg-amber/10 border-b border-amber/30 text-amber'
-        }`}>
-          <span>
-            {quotaAlert.level === 'critical'
-              ? 'Monthly quota exhausted. All simulation requests are being rejected until reset.'
-              : `You've used ${quotaAlert.pct}% of your monthly quota. Upgrade to Pro to get 10,000 simulations.`}
-          </span>
-          <button onClick={dismissAlert} className="ml-4 shrink-0 opacity-70 hover:opacity-100 transition-opacity">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
-        </div>
-      )}
+      <DashboardToasts />
 
       <div className="flex flex-col md:flex-row flex-1">
       {/* Sidebar */}
@@ -290,9 +257,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <appkit-button />
             </div>
             <div className="w-full bg-border rounded-full h-1.5 mt-2.5">
-              <div className="bg-coral h-1.5 rounded-full" style={{ width: '0%' }} />
+              <div
+                className="bg-coral h-1.5 rounded-full transition-all duration-500"
+                style={{ width: `${quotaLimit > 0 ? Math.min(100, Math.round((quotaUsed / quotaLimit) * 100)) : 0}%` }}
+              />
             </div>
-            <p className="text-xs text-text-tertiary mt-1.5">0 / 500 simulations</p>
+            <p className="text-xs text-text-tertiary mt-1.5">
+              {quotaUsed.toLocaleString()} / {quotaLimit.toLocaleString()} simulations
+            </p>
           </div>
         </div>
       </aside>
