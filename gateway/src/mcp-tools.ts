@@ -8,19 +8,20 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getSimulation, getMongoDb, createBacktest, getBacktest } from './db.js';
 import { submitSimulationJob } from './queue.js';
+import { VALID_NETWORKS } from './chain-config.js';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
 export const MCP_TOOLS = [
   {
     name: 'preflight_simulate',
-    description: 'Submit a transaction batch for pre-flight simulation on isolated ephemeral Anvil forks of Arbitrum. Returns a session_id to poll for results.',
+    description: 'Submit a transaction batch for pre-flight simulation on isolated ephemeral Anvil forks. Returns a session_id to poll for results.',
     inputSchema: {
       type: 'object',
       properties: {
         network: {
           type: 'string',
-          enum: ['arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet'],
+          enum: VALID_NETWORKS,
           description: 'Target blockchain network',
         },
         agent_address: {
@@ -115,6 +116,42 @@ export const MCP_TOOLS = [
         },
       },
       required: ['backtest_id'],
+    },
+  },
+  {
+    name: 'x402_preflight',
+    description: 'Simulate an x402 payment before it fires. Forks the target chain, executes the ERC-20 transfer, and checks the payee\'s ERC-8004 on-chain reputation. Returns a session_id — poll get_simulation_status for the full safety verdict including FLAG_LOW_AGENT_REPUTATION and FLAG_X402_PAYMENT_RISK.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        network: {
+          type: 'string',
+          enum: VALID_NETWORKS,
+          description: 'Target chain for the payment (e.g. avalanche-fuji)',
+        },
+        from_address: {
+          type: 'string',
+          description: 'Agent wallet address making the payment (0x...)',
+        },
+        to_address: {
+          type: 'string',
+          description: 'Payee address receiving the x402 payment (0x...)',
+        },
+        token_address: {
+          type: 'string',
+          description: 'ERC-20 token contract address (e.g. USDC on Fuji)',
+        },
+        amount_raw: {
+          type: 'string',
+          description: 'Raw token amount without decimals (e.g. "1000000" for 1 USDC)',
+        },
+        erc8004_check: {
+          type: 'boolean',
+          default: true,
+          description: 'Whether to query ERC-8004 reputation for the payee (default: true)',
+        },
+      },
+      required: ['network', 'from_address', 'to_address', 'token_address', 'amount_raw'],
     },
   },
 ];
@@ -228,6 +265,42 @@ export async function callMcpTool(
       };
     } catch (err: any) {
       return { error: { code: -32603, message: `Error fetching backtest: ${err.message}` } };
+    }
+  }
+
+  if (name === 'x402_preflight') {
+    const { network, from_address, to_address, token_address, amount_raw, erc8004_check = true } = args as any;
+    if (!network || !from_address || !to_address || !token_address || !amount_raw) {
+      return { error: { code: -32602, message: 'Missing required parameters: network, from_address, to_address, token_address, amount_raw' } };
+    }
+    if (!VALID_NETWORKS.includes(network)) {
+      return { error: { code: -32602, message: `Invalid network. Supported: ${VALID_NETWORKS.join(', ')}` } };
+    }
+
+    let amountHex: string;
+    try {
+      amountHex = BigInt(amount_raw).toString(16).padStart(64, '0');
+    } catch {
+      return { error: { code: -32602, message: "'amount_raw' must be a valid integer string" } };
+    }
+
+    const transferData = `0xa9059cbb${String(to_address).replace(/^0x/i, '').toLowerCase().padStart(64, '0')}${amountHex}`;
+    const transactions = [{ to: token_address, data: transferData, value: '0', gas: '0x30D40' }];
+
+    try {
+      const sessionId = uuidv4();
+      await submitSimulationJob(sessionId, network, from_address, transactions, 0, apiKeyId ?? null);
+      return {
+        result: {
+          session_id: sessionId,
+          simulation_type: 'x402_payment',
+          status: 'PENDING',
+          message: 'x402 payment simulation queued. Poll get_simulation_status with this session_id. Check flags.low_agent_reputation and flags.x402_payment_risk in the result.',
+          erc8004_check,
+        },
+      };
+    } catch (err: any) {
+      return { error: { code: -32603, message: `Failed to queue x402 simulation: ${err.message}` } };
     }
   }
 

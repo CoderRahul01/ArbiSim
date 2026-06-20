@@ -9,6 +9,7 @@ from simulation_engine import AnvilForkInstance
 from analytical_brain import AnalyticalBrain
 from storage import save_telemetry
 from chain_registry import log_simulation_to_chain
+from chain_config import get_chain
 from backtest_runner import run_backtest
 from webhook_delivery import deliver_webhook
 
@@ -279,7 +280,8 @@ async def process_job(job: dict) -> None:
                         await mark_job_done(job["id"], "FAILED")
                         return
 
-        brain = AnalyticalBrain(rpc_url)
+        chain = get_chain(network)
+        brain = AnalyticalBrain(rpc_url, chain_config=chain)
         transactions = [] if is_user_op else payload.get("transactions", [])
 
         # Run simulation in a thread to avoid blocking the event loop
@@ -322,8 +324,8 @@ async def process_job(job: dict) -> None:
         pool = await get_pool()
         await deliver_webhook(session_id, results["status"], results, pool)
 
-        # Write verdict to SimulationRegistry.sol on Arbitrum Sepolia (non-blocking)
-        await log_simulation_to_chain(session_id, results)
+        # Write verdict to SimulationRegistry.sol on the simulation chain (non-blocking)
+        await log_simulation_to_chain(session_id, results, chain_id=chain.chain_id)
 
     except Exception as err:
         print(f"[{session_id}] Exception: {err}")

@@ -12,11 +12,14 @@ line_length = 100
 tab_width = 4
 bracket_spacing = false
 
-# Arbitrum Sepolia
 [rpc_endpoints]
 arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC}"
 arbitrum_one = "${ARBITRUM_ONE_RPC}"
+avalanche_fuji = "${AVALANCHE_FUJI_RPC}"
+avalanche_mainnet = "${AVALANCHE_MAINNET_RPC}"
 
 [etherscan]
 arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}", url = "https://api-sepolia.arbiscan.io/api" }
 arbitrum_one = { key = "${ARBISCAN_API_KEY}", url = "https://api.arbiscan.io/api" }
+avalanche_fuji = { key = "${SNOWTRACE_API_KEY}", url = "https://api-testnet.snowtrace.io/api" }
+avalanche_mainnet = { key = "${SNOWTRACE_API_KEY}", url = "https://api.snowtrace.io/api" }
