@@ -53,7 +53,10 @@ function JsonBlock({ data, label }: { data: unknown; label: string }) {
 }
 
 export default function McpPlaygroundPage() {
-  const [apiKey,       setApiKey]       = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') ?? '').trim().replace(/[^\x20-\x7E]/g, '') : '');
+  const [apiKey,       setApiKey]       = useState(() => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('arbisim_api_key') ?? '' : '';
+    return raw.trim().replace(/[^\x20-\x7E]/g, '');
+  });
   const [network,      setNetwork]      = useState('arbitrum-one');
   const [agentAddress, setAgentAddress] = useState('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
   const [txPayload,    setTxPayload]    = useState(EXAMPLE_PAYLOAD);
@@ -74,10 +77,11 @@ export default function McpPlaygroundPage() {
     const id = callIdRef.current++;
     const body = { jsonrpc: '2.0', id, method, params };
     addExchange('request', method, body);
+    const cleanKey = apiKey.trim().replace(/[^\x20-\x7E]/g, '');
 
     const res = await fetch(`${CF_WORKER_URL}/api/v1/mcp`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': cleanKey },
       body: JSON.stringify(body),
     });
     const json = await res.json();
@@ -207,11 +211,7 @@ export default function McpPlaygroundPage() {
                 <div>
                   <label className="block text-xs font-mono text-text-tertiary uppercase tracking-wider mb-1.5">API Key</label>
                   <input type="password" value={apiKey}
-                    onChange={e => {
-                      const val = e.target.value.replace(/[^\x20-\x7E]/g, '');
-                      setApiKey(val);
-                      if (typeof window !== 'undefined') localStorage.setItem('arbisim_api_key', val);
-                    }}
+                    onChange={e => { const s = e.target.value.replace(/[^\x20-\x7E]/g, ''); setApiKey(s); if (typeof window !== 'undefined') localStorage.setItem('arbisim_api_key', s); }}
                     placeholder="ask_free_••••••••"
                     className="w-full px-3 py-2.5 rounded-lg border border-border bg-elevated text-text-primary font-mono text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors" />
                 </div>
