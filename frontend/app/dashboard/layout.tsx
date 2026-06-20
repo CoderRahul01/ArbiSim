@@ -131,6 +131,9 @@ function useQuotaStats(): QuotaStats {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const quotaStats = useQuotaStats();
+  const { isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
+  const { open } = useAppKit();
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [jwt, setJwt] = useState<string | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);

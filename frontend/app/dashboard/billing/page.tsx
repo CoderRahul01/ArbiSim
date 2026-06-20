@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useAccount } from 'wagmi';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -12,11 +11,6 @@ const TIER_LIMITS: Record<string, { monthly: number; label: string }> = {
   enterprise: { monthly: 100000, label: 'Enterprise' },
 };
 
-function dbTierToUiTier(tier: string): string {
-  if (tier === 'builder') return 'pro';
-  if (tier === 'protocol') return 'enterprise';
-  return tier;
-}
 
 function useBillingStats() {
   const [quotaUsed, setQuotaUsed] = useState(0);
@@ -26,7 +20,6 @@ function useBillingStats() {
   useEffect(() => {
     const raw = localStorage.getItem('arbisim_api_key') ?? '';
     const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
-    if (key) setTier(parseTierFromKey(key));
     if (!key) return;
 
     fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
@@ -34,7 +27,11 @@ function useBillingStats() {
       .then((data: { quota_used?: number; quota_limit?: number } | null) => {
         if (!data) return;
         setQuotaUsed(data.quota_used ?? 0);
-        setQuotaLimit(data.quota_limit ?? 500);
+        const limit = data.quota_limit ?? 500;
+        setQuotaLimit(limit);
+        if (limit >= 100_000) setTier('enterprise');
+        else if (limit >= 10_000) setTier('pro');
+        else setTier('free');
       })
       .catch(() => {});
   }, []);
