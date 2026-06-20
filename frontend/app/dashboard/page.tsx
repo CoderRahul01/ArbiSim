@@ -203,29 +203,6 @@ export default function DashboardOverview() {
           ))}
         </div>
 
-        {/* Rejection spike alert */}
-        {(() => {
-          const today = new Date().toISOString().split('T')[0];
-          const todayBuckets = analytics?.daily_buckets.filter(b => {
-            return new Date(b.date).toISOString().split('T')[0] === today;
-          }) ?? [];
-          const todayApproved = todayBuckets.find(b => b.status === 'APPROVED')?.count ?? 0;
-          const todayRejected = todayBuckets.find(b => b.status === 'REJECTED')?.count ?? 0;
-          const todayTotal = todayApproved + todayRejected;
-          const todayRate = todayTotal > 0 ? Math.round((todayApproved / todayTotal) * 100) : 100;
-          if (todayTotal > 5 && todayRate < 50) {
-            return (
-              <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber/30 bg-amber/5 px-5 py-4">
-                <span className="text-amber mt-0.5 shrink-0">⚠</span>
-                <p className="text-xs text-amber leading-relaxed">
-                  High rejection rate today (approval: {todayRate}%). Review your transaction parameters or check network conditions.
-                </p>
-              </div>
-            );
-          }
-          return null;
-        })()}
-
         {/* Analytics Section */}
         <div className="mb-8 space-y-6">
           <div className="flex items-center justify-between">

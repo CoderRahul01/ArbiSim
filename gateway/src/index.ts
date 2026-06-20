@@ -16,6 +16,7 @@ import { router, publicRouter } from './routes.js';
 import adminRouter from './routes/admin.js';
 import backtestRouter from './routes/backtest.js';
 import webhookRouter from './routes/webhooks.js';
+import nowPaymentsRouter from './routes/nowpayments.js';
 import { requireAuth } from './middleware/auth.js';
 import { initDb } from './db.js';
 import { MCP_TOOLS, callMcpTool } from './mcp-tools.js';
@@ -36,6 +37,9 @@ app.use(express.json());
 
 // Public simulation permalink routes (no auth)
 app.use('/api/v1/sim', publicRouter);
+
+// Public payment webhooks (no auth)
+app.use('/api/v1/public/webhooks', nowPaymentsRouter);
 
 // Auth-protected simulation routes
 app.use('/api/v1', requireAuth, router);

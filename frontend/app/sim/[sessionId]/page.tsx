@@ -1,16 +1,50 @@
+import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
+import ShareButton from './ShareButton';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
-const ARBISCAN_SEPOLIA = 'https://sepolia.arbiscan.io/address/';
+
+// ── Chain helpers ──────────────────────────────────────────────────────────
+
+// Block explorer address-lookup URLs per network
+const EXPLORER_ADDRESS_URL: Record<string, string> = {
+  'arbitrum-one':            'https://arbiscan.io/address/',
+  'arbitrum-sepolia':        'https://sepolia.arbiscan.io/address/',
+  'avalanche-mainnet':       'https://snowscan.xyz/address/',
+  'avalanche-fuji':          'https://testnet.snowscan.xyz/address/',
+  'robinhood-chain-testnet': '',
+};
+
+// Registry addresses per network (server-side env vars, safe in Server Components)
+const REGISTRY_BY_NETWORK: Record<string, string> = {
+  'arbitrum-one':      process.env.SIMULATION_REGISTRY_ADDRESS ?? '',
+  'arbitrum-sepolia':  process.env.ARBITRUM_SEPOLIA_REGISTRY   ?? process.env.SIMULATION_REGISTRY_ADDRESS ?? '',
+  'avalanche-mainnet': process.env.AVALANCHE_MAINNET_REGISTRY  ?? '',
+  'avalanche-fuji':    process.env.AVALANCHE_FUJI_REGISTRY     ?? '',
+};
+
+function explorerUrl(network: string, address: string): string {
+  const base = EXPLORER_ADDRESS_URL[network] ?? '';
+  return base ? `${base}${address}` : '';
+}
+
+function explorerLabel(network: string): string {
+  if (network.startsWith('avalanche')) return 'Snowscan';
+  return network.includes('sepolia') ? 'Arbiscan Sepolia' : 'Arbiscan';
+}
+
+function nativeToken(network: string): string {
+  return network?.startsWith('avalanche') ? 'AVAX' : 'ETH';
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface GasBreakdown {
-  l2_gas_used: number;
-  l1_gas_buffer: number;
-  host_io_penalty_gas: number;
-  total_fees_wei: string;
+  l2_gas_used?: number;
+  l1_gas_buffer?: number | null;
+  host_io_penalty_gas?: number;
+  total_fees_wei?: string;
 }
 
 interface TimeboostData {
@@ -36,18 +70,37 @@ interface PublicSimResult {
   timeboost?: TimeboostData;
 }
 
+// ── Metadata ────────────────────────────────────────────────────────────────
+
+export async function generateMetadata(
+  { params }: { params: Promise<{ sessionId: string }> }
+): Promise<Metadata> {
+  const { sessionId } = await params;
+  const short = sessionId.slice(0, 8);
+  return {
+    title: `Simulation ${short}… — ArbiSim Guard`,
+    description: 'Pre-flight EVM simulation result — ArbiSim Guard',
+    openGraph: {
+      title: 'Simulation result — ArbiSim Guard',
+      description: 'View this transaction pre-flight simulation result',
+    },
+  };
+}
+
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-const DANGEROUS_FLAGS = new Set(['execution_reverted', 'sandwich_detected', 'sig_failed', 'valid_until_expired', 'stylus_ink_overflow']);
+const DANGEROUS_FLAGS = new Set([
+  'execution_reverted', 'sandwich_detected', 'sig_failed',
+  'valid_until_expired', 'stylus_ink_overflow',
+  'low_agent_reputation', 'x402_payment_risk',
+]);
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     APPROVED: 'bg-teal-950/60 border-teal-600/30 text-teal-300',
     REJECTED: 'bg-red-950/60 border-red-600/30 text-red-300',
   };
-  const icons: Record<string, string> = {
-    APPROVED: '✓', REJECTED: '✗',
-  };
+  const icons: Record<string, string> = { APPROVED: '✓', REJECTED: '✗' };
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-sm font-mono font-medium ${styles[status] ?? 'bg-zinc-900 border-zinc-700 text-zinc-400'}`}>
       {icons[status] ?? '?'} {status}
@@ -57,7 +110,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function FlagRow({ flagKey, value }: { flagKey: string; value: boolean }) {
   const isDangerous = DANGEROUS_FLAGS.has(flagKey) && value;
-  const isWarning = !DANGEROUS_FLAGS.has(flagKey) && value;
+  const isWarning   = !DANGEROUS_FLAGS.has(flagKey) && value;
   return (
     <div className={`flex items-center justify-between px-4 py-2.5 rounded-md border transition-colors ${
       isDangerous ? 'border-red-800/30 bg-red-950/20' :
@@ -68,6 +121,37 @@ function FlagRow({ flagKey, value }: { flagKey: string; value: boolean }) {
       <span className={`text-sm font-medium ${value ? (isDangerous ? 'text-red-400' : 'text-amber-400') : 'text-teal'}`}>
         {value ? 'true' : 'false'}
       </span>
+    </div>
+  );
+}
+
+function GasBreakdownPanel({ breakdown, network }: { breakdown: GasBreakdown; network: string }) {
+  const token = nativeToken(network);
+  const totalFormatted = breakdown.total_fees_wei
+    ? (Number(BigInt(breakdown.total_fees_wei)) / 1e18).toFixed(8)
+    : null;
+
+  // Only show L1 buffer row for chains that have L1 data fees
+  const hasL1Fee = breakdown.l1_gas_buffer != null && breakdown.l1_gas_buffer > 0;
+
+  const rows: Array<{ label: string; value: string }> = [
+    { label: 'Gas used',        value: breakdown.l2_gas_used?.toLocaleString() ?? '—' },
+    ...(hasL1Fee ? [{ label: 'L1 buffer', value: breakdown.l1_gas_buffer!.toLocaleString() }] : []),
+    { label: 'Host I/O penalty', value: breakdown.host_io_penalty_gas?.toLocaleString() ?? '0' },
+    { label: 'Total fees',       value: totalFormatted ? `${totalFormatted} ${token}` : '—' },
+  ];
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-6">
+      <h3 className="text-xs font-mono text-text-tertiary uppercase tracking-widest mb-4">Gas breakdown</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+        {rows.map(({ label, value }) => (
+          <div key={label}>
+            <p className="text-xs text-text-tertiary">{label}</p>
+            <p className="font-mono text-text-primary mt-0.5">{value}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -87,14 +171,15 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
     if (res.ok) {
       sim = await res.json() as PublicSimResult;
     } else {
-      const err = await res.json().catch(() => ({})) as any;
+      const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
       fetchError = err?.error?.message ?? `Simulation not found (HTTP ${res.status})`;
     }
-  } catch (err) {
+  } catch {
     fetchError = 'Unable to reach the ArbiSim Guard API.';
   }
 
-  const registryAddress = process.env.SIMULATION_REGISTRY_ADDRESS ?? '';
+  // Pick the right registry address for the session's chain
+  const registryAddress = sim ? (REGISTRY_BY_NETWORK[sim.network] ?? '') : '';
 
   return (
     <div className="min-h-screen bg-base">
@@ -144,10 +229,10 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
             {/* Stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                { label: 'Verdict', value: sim.status },
-                { label: 'Gas cost', value: sim.gasCostEth ? `${sim.gasCostEth} ETH` : '—' },
-                { label: 'Slippage', value: sim.slippagePercent != null ? `${sim.slippagePercent.toFixed(2)}%` : '—' },
-                { label: 'Net P&L', value: sim.netPnlUsd ?? '—' },
+                { label: `Gas cost (${nativeToken(sim.network)})`, value: sim.gasCostEth ? `${sim.gasCostEth}` : '—' },
+                { label: 'Slippage',                               value: sim.slippagePercent != null ? `${sim.slippagePercent.toFixed(2)}%` : '—' },
+                { label: 'Net P&L',                                value: sim.netPnlUsd ?? '—' },
+                { label: 'Stylus ink',                             value: sim.stylusInkConsumed != null ? sim.stylusInkConsumed.toLocaleString() : '—' },
               ].map(s => (
                 <div key={s.label} className="rounded-lg border border-border bg-surface px-4 py-3">
                   <p className="text-xs text-text-tertiary font-mono uppercase tracking-wider mb-1">{s.label}</p>
@@ -163,6 +248,11 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
               </div>
             )}
 
+            {/* Gas breakdown */}
+            {sim.gasBreakdown && (
+              <GasBreakdownPanel breakdown={sim.gasBreakdown} network={sim.network} />
+            )}
+
             {/* Flags grid */}
             {sim.flags && (
               <div className="rounded-xl border border-border bg-surface p-6">
@@ -176,26 +266,33 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
             {/* Footer */}
             <div className="rounded-xl border border-border bg-surface p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
-                {registryAddress && (
-                  <a
-                    href={`${ARBISCAN_SEPOLIA}${registryAddress}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-mono text-coral hover:text-coral-hover transition-colors inline-flex items-center gap-1"
-                  >
-                    Verified on-chain at Arbiscan Sepolia ↗
-                  </a>
-                )}
+                {registryAddress && (() => {
+                  const url = explorerUrl(sim.network, registryAddress);
+                  const label = explorerLabel(sim.network);
+                  return url ? (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-mono text-coral hover:text-coral-hover transition-colors inline-flex items-center gap-1"
+                    >
+                      Verified on-chain at {label} ↗
+                    </a>
+                  ) : null;
+                })()}
                 <p className="text-xs text-text-tertiary mt-1">
                   This simulation was independently verified by ArbiSim Guard.
                 </p>
               </div>
-              <Link
-                href="/dashboard"
-                className="px-5 py-2.5 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 shadow-lg shadow-coral/25 shrink-0"
-              >
-                Run your own simulation →
-              </Link>
+              <div className="flex items-center gap-3 shrink-0">
+                <ShareButton sessionId={sessionId} />
+                <Link
+                  href="/dashboard"
+                  className="px-5 py-2.5 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 shadow-lg shadow-coral/25"
+                >
+                  Run your own →
+                </Link>
+              </div>
             </div>
           </div>
         ) : null}

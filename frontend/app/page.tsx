@@ -83,14 +83,16 @@ function LiveTerminal() {
 
 function FlagGrid() {
   const flags: SimFlag[] = [
-    { key: 'execution_reverted',    label: 'Execution revert',   description: 'Transaction would revert on-chain. Capital not spent.',        status: 'danger'  },
-    { key: 'high_slippage',         label: 'High slippage',       description: 'Price impact exceeds threshold. Swap unfavourable.',           status: 'warning' },
-    { key: 'sandwich_detected',     label: 'MEV sandwich',        description: 'Surrounding txs detected. Front/back-run likely.',             status: 'danger'  },
-    { key: 'unsafe_allowance',      label: 'Unsafe allowance',    description: 'Allowance exceeds transaction amount. Revoke risk.',           status: 'warning' },
-    { key: 'sig_failed',            label: 'Signature invalid',   description: 'UserOp sigFailed from EntryPoint. AA20 violation.',            status: 'danger'  },
-    { key: 'valid_until_expired',   label: 'Session key expired', description: 'validUntil in past. UserOp will be rejected.',                 status: 'danger'  },
-    { key: 'timeboost_recommended', label: 'Timeboost advised',   description: 'Priority lane secures 200ms advantage. Premium shown.',        status: 'warning' },
-    { key: 'stylus_ink_overflow',   label: 'Stylus ink limit',    description: 'WASM execution exceeds ink budget. OOG likely.',               status: 'danger'  },
+    { key: 'execution_reverted',    label: 'Execution revert',      description: 'Transaction would revert on-chain. Capital not spent.',         status: 'danger'  },
+    { key: 'high_slippage',         label: 'High slippage',          description: 'Price impact exceeds threshold. Swap unfavourable.',            status: 'warning' },
+    { key: 'sandwich_detected',     label: 'MEV sandwich',           description: 'Surrounding txs detected. Front/back-run likely.',              status: 'danger'  },
+    { key: 'unsafe_allowance',      label: 'Unsafe allowance',       description: 'Allowance exceeds transaction amount. Revoke risk.',            status: 'warning' },
+    { key: 'sig_failed',            label: 'Signature invalid',      description: 'UserOp sigFailed from EntryPoint. AA20 violation.',             status: 'danger'  },
+    { key: 'valid_until_expired',   label: 'Session key expired',    description: 'validUntil in past. UserOp will be rejected.',                  status: 'danger'  },
+    { key: 'timeboost_recommended', label: 'Timeboost advised',      description: 'Priority lane secures 200ms advantage. Premium shown.',         status: 'warning' },
+    { key: 'stylus_ink_overflow',   label: 'Stylus ink limit',       description: 'WASM execution exceeds ink budget. OOG likely.',                status: 'danger'  },
+    { key: 'low_agent_reputation',  label: 'Low ERC-8004 rep',       description: 'Payee reputation score < 50 or unregistered. Payment risky.',   status: 'danger'  },
+    { key: 'x402_payment_risk',     label: 'x402 payment risk',      description: 'ERC-20 transfer to low-reputation payee. Abort before paying.', status: 'danger'  },
   ];
 
   const colors = {
@@ -208,15 +210,25 @@ export default function HomePage() {
               <span className="w-1.5 h-1.5 rounded-full bg-coral animate-pulse-dot" />
               Built for Arbitrum Open House London 2026
             </div>
-            <h1 className="font-serif text-display text-text-primary leading-[1.05] mb-6 tracking-[-0.02em]">
+            <h1 className="font-serif text-display text-text-primary leading-[1.05] mb-3 tracking-[-0.02em]">
               Test before you<br />
               <span className="text-coral italic">transact.</span>
             </h1>
-            <p className="text-lg text-text-secondary leading-relaxed mb-8 max-w-md">
-              ArbiSim Guard gives AI agents a pre-flight safety check.
-              Simulate any DeFi transaction in an isolated Arbitrum fork —
-              catch reverts, slippage, and MEV before a single wei leaves your wallet.
+            <p className="text-xs font-mono text-text-tertiary mb-6 tracking-wide">
+              ArbiSim — Arbitrary Simulation. Not one chain. All chains.
             </p>
+            <p className="text-lg text-text-secondary leading-relaxed mb-4 max-w-md">
+              ArbiSim Guard gives AI agents a pre-flight safety check.
+              Simulate any DeFi transaction in an isolated fork —
+              catch reverts, slippage, MEV, and agent reputation risk before a single wei leaves your wallet.
+            </p>
+            <div className="flex flex-wrap gap-1.5 mb-8">
+              {['Arbitrum One', 'Arbitrum Sepolia', 'Avalanche C-Chain', 'Fuji Testnet'].map(chain => (
+                <span key={chain} className="text-xs font-mono px-2.5 py-1 rounded-full border border-border bg-surface text-text-tertiary">
+                  {chain}
+                </span>
+              ))}
+            </div>
             <div className="flex flex-col sm:flex-row gap-3">
               <Link href="/dashboard/simulate" className="px-6 py-3 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 active:scale-95 shadow-xl shadow-coral/25 text-center">
                 Open Dashboard
@@ -228,10 +240,10 @@ export default function HomePage() {
             </div>
             <div className="flex gap-8 mt-12 pt-8 border-t border-border">
               {[
-                { value: '< 400ms', label: 'median latency' },
-                { value: '8',       label: 'safety flags'   },
-                { value: 'ERC-4337', label: 'AA support'    },
-                { value: 'Stylus',  label: 'WASM detection' },
+                { value: '< 400ms', label: 'median latency'  },
+                { value: '10',      label: 'safety flags'    },
+                { value: '5',       label: 'chains supported' },
+                { value: 'ERC-8004', label: 'reputation check' },
               ].map(s => (
                 <div key={s.label}>
                   <p className="text-xl font-mono font-semibold text-text-primary">{s.value}</p>
@@ -253,8 +265,8 @@ export default function HomePage() {
           <p className="text-text-secondary mb-12">Three steps. One API call. Zero capital at risk.</p>
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              { step: '01', title: 'Fork', accent: 'coral', description: 'ArbiSim Guard spawns an ephemeral Anvil fork of Arbitrum One at the current block. Your transaction executes against the exact live state — real liquidity, real prices, real protocols.' },
-              { step: '02', title: 'Analyse', accent: 'amber', description: 'The analytical engine parses execution traces, computes Nitro L1+L2 gas (with Brotli compression), detects Stylus WASM contracts, validates ERC-4337 UserOps, and scores MEV risk.' },
+              { step: '01', title: 'Fork', accent: 'coral', description: 'ArbiSim Guard spawns an ephemeral Anvil fork of any supported chain at the current block. Your transaction executes against the exact live state — real liquidity, real prices, real protocols.' },
+              { step: '02', title: 'Analyse', accent: 'amber', description: 'The analytical engine parses execution traces, computes chain-specific gas, detects Stylus WASM contracts, validates ERC-4337 UserOps, checks ERC-8004 agent reputation, and scores MEV risk.' },
               { step: '03', title: 'Decide', accent: 'teal', description: 'You receive an APPROVED or REJECTED verdict with a structured safety flag object, full gas breakdown, Timeboost recommendation, and the exact revert reason if applicable.' },
             ].map(item => (
               <div key={item.step} className="rounded-xl border border-border bg-surface p-6 transition-all duration-300 hover:border-zinc-600 hover:bg-elevated">
@@ -279,8 +291,8 @@ export default function HomePage() {
           </div>
           <h2 className="font-serif text-h1 text-text-primary mb-3">Native MCP tool. Zero REST required.</h2>
           <p className="text-text-secondary mb-12 max-w-xl">
-            Call <code className="font-mono text-coral text-sm">preflight_simulate</code> directly from any MCP-compatible agent framework.
-            Your agent gets a structured APPROVED/REJECTED verdict — no HTTP wiring needed.
+            Call <code className="font-mono text-coral text-sm">preflight_simulate</code> or <code className="font-mono text-coral text-sm">x402_preflight</code> directly from any MCP-compatible agent framework.
+            Your agent gets a structured APPROVED/REJECTED verdict with reputation flags — no HTTP wiring needed.
           </p>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="rounded-xl border border-border bg-surface p-6">
@@ -303,25 +315,25 @@ export default function HomePage() {
               </pre>
             </div>
             <div className="rounded-xl border border-border bg-surface p-6">
-              <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-4">Tool call + structured response</p>
+              <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-4">x402 payment safety check</p>
               <pre className="text-xs font-mono text-text-secondary leading-relaxed overflow-x-auto">
-{`// Your agent calls:
-preflight_simulate({
-  network: "arbitrum-one",
-  agent_address: "0x...",
-  transactions: [{ to, data, value }],
-  max_slippage_tolerance: 2.0
+{`// Check an x402 payment before it fires:
+x402_preflight({
+  network: "avalanche-fuji",
+  from_address: "0x<agent>",
+  to_address:   "0x<payee>",
+  token_address: "0x<USDC>",
+  amount_raw: "1000000"   // 1 USDC
 })
 
-// Gets back:
+// Safety report:
 {
   "status": "REJECTED",
   "flags": {
-    "high_slippage": true,   // 12.4%
-    "sandwich_detected": true
+    "low_agent_reputation": true,  // score 12/100
+    "x402_payment_risk": true
   },
-  "gas": { "l1_buffer": 12800 },
-  "verdict": "ABORT"
+  "verdict": "ABORT — payee not trusted"
 }`}
               </pre>
             </div>
@@ -379,7 +391,7 @@ preflight_simulate({
             Protect your agents.<br />Simulate before you commit.
           </h2>
           <p className="text-text-secondary mb-8">
-            Built on Arbitrum. Native MCP tool. Works with Vibekit, Eliza, and LangGraph today.
+            Multi-chain. Native MCP tool. Works with Vibekit, Eliza, and LangGraph today.
           </p>
           {submitted ? (
             <div className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-teal/10 border border-teal/30 text-teal animate-fade-in">
@@ -413,7 +425,7 @@ preflight_simulate({
             <Image src="/logo.png" alt="ArbiSim Guard" width={20} height={20} className="rounded" />
             <span>ArbiSim Guard</span>
             <span>·</span>
-            <span>Built on Arbitrum</span>
+            <span>Arbitrum · Avalanche · Multi-chain</span>
           </div>
           <div className="flex items-center gap-6">
             <a href="https://github.com/rahulpandey187/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>

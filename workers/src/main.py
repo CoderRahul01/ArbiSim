@@ -2,16 +2,45 @@ import os
 import json
 import asyncio
 import asyncpg
+import posthog as _posthog
 from dotenv import load_dotenv
 
 from simulation_engine import AnvilForkInstance
 from analytical_brain import AnalyticalBrain
 from storage import save_telemetry
 from chain_registry import log_simulation_to_chain
+from chain_config import get_chain
 from backtest_runner import run_backtest
 from webhook_delivery import deliver_webhook
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
+
+_posthog.project_api_key = os.getenv("POSTHOG_API_KEY", "")
+_posthog.host = "https://us.i.posthog.com"
+_posthog.disabled = not _posthog.project_api_key
+
+
+def _track(session_id: str, network: str | None, agent_address: str | None, results: dict) -> None:
+    if _posthog.disabled:
+        return
+    try:
+        _posthog.capture(
+            distinct_id=agent_address or "unknown",
+            event="simulation_completed",
+            properties={
+                "session_id":        session_id,
+                "network":           network,
+                "status":            results.get("status"),
+                "approved":          results.get("status") == "APPROVED",
+                "revert_reason":     results.get("revert_reason"),
+                "gas_cost_eth":      results.get("gas_cost_eth"),
+                "net_pnl_usd":       results.get("net_pnl_usd"),
+                "slippage_detected": results.get("slippage_detected"),
+                "stylus_ink":        results.get("stylus_ink_consumed", 0),
+            },
+        )
+    except Exception:
+        pass
 
 db_url = os.getenv("NEONDB_URL") or os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/arbisim_guard")
 
@@ -251,7 +280,8 @@ async def process_job(job: dict) -> None:
                         await mark_job_done(job["id"], "FAILED")
                         return
 
-        brain = AnalyticalBrain(rpc_url)
+        chain = get_chain(network)
+        brain = AnalyticalBrain(rpc_url, chain_config=chain)
         transactions = [] if is_user_op else payload.get("transactions", [])
 
         # Run simulation in a thread to avoid blocking the event loop
@@ -288,13 +318,14 @@ async def process_job(job: dict) -> None:
         # Update Neon state — results["status"] is already APPROVED or REJECTED
         await update_simulation(session_id, results["status"], results)
         await mark_job_done(job["id"], "COMPLETED")
+        _track(session_id, network, agent_address, results)
 
         # Deliver webhook asynchronously
         pool = await get_pool()
         await deliver_webhook(session_id, results["status"], results, pool)
 
-        # Write verdict to SimulationRegistry.sol on Arbitrum Sepolia (non-blocking)
-        await log_simulation_to_chain(session_id, results)
+        # Write verdict to SimulationRegistry.sol on the simulation chain (non-blocking)
+        await log_simulation_to_chain(session_id, results, chain_id=chain.chain_id)
 
     except Exception as err:
         print(f"[{session_id}] Exception: {err}")
@@ -312,6 +343,7 @@ async def process_job(job: dict) -> None:
         }
         await update_simulation(session_id, "REJECTED", err_telemetry)
         await mark_job_done(job["id"], "FAILED")
+        _track(session_id, network, agent_address, err_telemetry)
         
         # Deliver webhook on failure/rejection
         pool = await get_pool()

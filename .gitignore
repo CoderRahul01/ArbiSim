@@ -64,3 +64,4 @@ db/
 out/
 cache/
 broadcast/
+frontend/tsconfig.tsbuildinfo

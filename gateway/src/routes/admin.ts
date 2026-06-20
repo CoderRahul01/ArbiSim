@@ -223,4 +223,57 @@ router.post('/verify-upgrade', async (req: Request, res: Response): Promise<void
   res.json({ success: true, tier: targetTier });
 });
 
+/**
+ * POST /admin/create-checkout
+ * Creates a NOWPayments hosted checkout invoice.
+ */
+router.post('/create-checkout', async (req: Request, res: Response): Promise<void> => {
+  const { address, tier } = req.body as { address: string; tier: string };
+
+  if (!address || !tier) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Missing address or tier.' } });
+    return;
+  }
+
+  const targetTier = tier.toLowerCase();
+  const validTiers = ['builder', 'protocol'];
+  if (!validTiers.includes(targetTier)) {
+    res.status(400).json({ error: { code: 'INVALID_TIER', message: 'Can only upgrade to builder or protocol tiers.' } });
+    return;
+  }
+
+  const amount = targetTier === 'protocol' ? 299 : 29; // Pro = $29, Enterprise = $299
+  const description = `ArbiSim Guard Subscription: ${targetTier.toUpperCase()} Plan`;
+  
+  // orderId encodes address and tier and timestamp to make webhook processing stateless
+  const orderId = `${address.toLowerCase()}:${targetTier}:${Date.now()}`;
+
+  try {
+    const { NowPaymentsSDK } = await import('@nowpaymentsio/nowpayments-sdk-nodejs');
+    const sdk = new NowPaymentsSDK({
+      apiKey: process.env.NOWPAYMENTS_API_KEY || '',
+      ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET || '',
+      ipnCallbackUrl: process.env.NOWPAYMENTS_IPN_CALLBACK_URL || 'https://arbisim-proxy.workers.dev/api/v1/public/webhooks/nowpayments',
+      successUrl: process.env.NOWPAYMENTS_SUCCESS_URL || 'https://arbisimguard.vercel.app/dashboard/billing?status=success',
+      cancelUrl: process.env.NOWPAYMENTS_CANCEL_URL || 'https://arbisimguard.vercel.app/dashboard/billing?status=cancel',
+    });
+
+    const checkout = await sdk.createCheckout({
+      amount,
+      currency: 'usd',
+      orderId,
+      description,
+    });
+
+    res.json({
+      success: true,
+      invoice_url: checkout.invoice_url,
+      id: checkout.id,
+    });
+  } catch (err: any) {
+    console.error('Failed to create NOWPayments checkout:', err);
+    res.status(500).json({ error: { code: 'NOWPAYMENTS_ERROR', message: err.message || 'Failed to create checkout invoice.' } });
+  }
+});
+
 export default router;

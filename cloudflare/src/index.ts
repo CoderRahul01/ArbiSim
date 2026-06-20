@@ -124,6 +124,49 @@ export default {
       }
     }
 
+    // ── Public NOWPayments Webhook IPN Bypass ──────────────────────────────
+    if (url.pathname === '/api/v1/public/webhooks/nowpayments') {
+      const targetUrl = env.GATEWAY_URL.replace(/\/$/, '') + url.pathname + url.search;
+      const proxyReq = new Request(targetUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      });
+      try {
+        const resp = await fetch(proxyReq);
+        const body = await resp.arrayBuffer();
+        return new Response(body, {
+          status: resp.status,
+          headers: {
+            'Content-Type': resp.headers.get('Content-Type') ?? 'application/json',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch {
+        return jsonError(502, 'GATEWAY_ERROR', 'Gateway unreachable.', origin);
+      }
+    }
+
+    // ── Internal Update Tier Route (from Gateway) ──────────────────────────
+    if (url.pathname === '/api/v1/internal/update-tier' && request.method === 'POST') {
+      const internalSecret = request.headers.get('X-Gateway-Secret');
+      if (!env.ADMIN_API_KEY || internalSecret !== env.ADMIN_API_KEY) {
+        return jsonError(403, 'FORBIDDEN', 'Invalid gateway internal secret.', origin);
+      }
+      try {
+        const { address, tier } = await request.json() as { address: string; tier: string };
+        if (!address || !tier) {
+          return jsonError(400, 'BAD_REQUEST', 'Missing address or tier.', origin);
+        }
+        await env.API_KEYS.put(`user_tier:${address.toLowerCase()}`, tier.toLowerCase());
+        return new Response(JSON.stringify({ success: true, address, tier }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+        });
+      } catch (err: any) {
+        return jsonError(500, 'INTERNAL_ERROR', err.message || 'Failed to update tier.', origin);
+      }
+    }
+
     const rawKey =
       request.headers.get('X-API-Key') ??
       request.headers.get('Authorization')?.replace('Bearer ', '') ??
@@ -179,6 +222,49 @@ export default {
       return new Response(JSON.stringify({ tier: userTier }), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
       });
+    }
+
+    if (url.pathname === '/api/v1/billing/checkout' && request.method === 'POST') {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader?.startsWith('Bearer ')) {
+        return jsonError(401, 'UNAUTHORIZED', 'Missing bearer token.', origin);
+      }
+      const token = authHeader.replace('Bearer ', '');
+      const isValid = await jwt.verify(token, env.JWT_SECRET || 'default_dev_secret');
+      if (!isValid) return jsonError(401, 'UNAUTHORIZED', 'Invalid or expired token.', origin);
+      
+      const decoded = jwt.decode(token) as { payload: { address: string } };
+      const address = decoded.payload.address.toLowerCase();
+
+      try {
+        const { tier } = await request.json() as { tier: string };
+        if (!tier) {
+          return jsonError(400, 'BAD_REQUEST', 'Missing tier.', origin);
+        }
+
+        // Forward creation to Gateway
+        const targetUrl = env.GATEWAY_URL.replace(/\/$/, '') + '/admin/create-checkout';
+        const verifyResp = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': env.ADMIN_API_KEY,
+          },
+          body: JSON.stringify({ address, tier }),
+        });
+
+        if (!verifyResp.ok) {
+          const errData = await verifyResp.json().catch(() => ({})) as any;
+          return jsonError(verifyResp.status, 'CHECKOUT_FAILED', errData?.error?.message ?? 'Failed to create checkout.', origin);
+        }
+
+        const data = await verifyResp.json() as any;
+        return new Response(JSON.stringify(data), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+        });
+      } catch (err: any) {
+        return jsonError(500, 'INTERNAL_ERROR', err.message || 'Checkout creation failed.', origin);
+      }
     }
 
     if (url.pathname === '/api/v1/billing/upgrade' && request.method === 'POST') {

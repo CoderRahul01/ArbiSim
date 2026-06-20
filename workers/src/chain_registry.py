@@ -1,11 +1,11 @@
 """
 chain_registry.py
-Writes simulation verdicts to SimulationRegistry.sol on Arbitrum Sepolia.
+Writes simulation verdicts to SimulationRegistry.sol on the appropriate chain.
+Chain selection is driven by chain_config.py — no addresses are hardcoded here.
 
 Required env vars:
-  REGISTRY_SIGNER_KEY          — private key of the contract owner wallet
-  ARB_SEPOLIA_RPC_URL          — Arbitrum Sepolia RPC (Alchemy / public fallback)
-  REGISTRY_CONTRACT_ADDRESS    — deployed contract address (optional override)
+  REGISTRY_SIGNER_KEY   — private key of the contract owner wallet
+  Per-chain RPC URLs    — resolved via chain_config.py
 """
 
 import os
@@ -13,12 +13,9 @@ import asyncio
 import logging
 from web3 import Web3
 
-logger = logging.getLogger(__name__)
+from chain_config import get_chain_by_id, CHAIN_REGISTRY
 
-REGISTRY_ADDRESS = os.getenv(
-    "REGISTRY_CONTRACT_ADDRESS",
-    "0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32",
-)
+logger = logging.getLogger(__name__)
 
 REGISTRY_ABI = [
     {
@@ -36,11 +33,12 @@ REGISTRY_ABI = [
     }
 ]
 
-# Flag bit positions — must match the contract constants
+# Flag bit positions — must match SimulationRegistry.sol constants
 _FLAG_EXECUTION_REVERTED    = 1 << 0
 _FLAG_HIGH_SLIPPAGE         = 1 << 1
 _FLAG_SANDWICH_DETECTED     = 1 << 2
 _FLAG_TIMEBOOST_RECOMMENDED = 1 << 6
+_FLAG_LOW_AGENT_REPUTATION  = 1 << 7
 
 
 def _uuid_to_bytes32(session_id: str) -> bytes:
@@ -64,29 +62,45 @@ def _build_flags(results: dict) -> int:
     mev = results.get("timeboost_mev_telemetry") or {}
     if mev.get("sandwich_risk_detected"):
         flags |= _FLAG_SANDWICH_DETECTED
-    if mev.get("timeboost_recommended"):
+    if mev.get("timeboost_fastlane_recommended"):
         flags |= _FLAG_TIMEBOOST_RECOMMENDED
+
+    chain_extras = results.get("chain_extras") or {}
+    if chain_extras.get("low_agent_reputation"):
+        flags |= _FLAG_LOW_AGENT_REPUTATION
 
     return flags
 
 
-def _sync_log(session_id: str, results: dict) -> str:
+def _sync_log(session_id: str, results: dict, chain_id: int) -> str:
     """Synchronous web3 call — intended to run in a thread executor."""
     private_key = os.getenv("REGISTRY_SIGNER_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
     if not private_key:
-        raise EnvironmentError("REGISTRY_SIGNER_KEY (or DEPLOYER_PRIVATE_KEY) not set — skipping on-chain write")
+        raise EnvironmentError(
+            "REGISTRY_SIGNER_KEY (or DEPLOYER_PRIVATE_KEY) not set — skipping on-chain write"
+        )
 
-    rpc_url = (
-        os.getenv("ARB_SEPOLIA_RPC_URL")
-        or os.getenv("ARBITRUM_SEPOLIA_RPC")
-        or "https://sepolia-rollup.arbitrum.io/rpc"
-    )
+    try:
+        chain = get_chain_by_id(chain_id)
+    except ValueError:
+        raise EnvironmentError(f"No chain config for chain_id={chain_id} — skipping registry write")
+
+    registry_address = chain.registry_address
+    if not registry_address:
+        raise EnvironmentError(
+            f"No registry address configured for {chain.name} (chain_id={chain_id}) — skipping"
+        )
+
+    rpc_url = chain.rpc_url
+    if not rpc_url:
+        raise EnvironmentError(f"No RPC URL for {chain.name} — skipping registry write")
+
     w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 30}))
     if not w3.is_connected():
-        raise ConnectionError(f"Cannot connect to Arbitrum Sepolia at {rpc_url}")
+        raise ConnectionError(f"Cannot connect to {chain.name} at {rpc_url}")
 
     contract = w3.eth.contract(
-        address=Web3.to_checksum_address(REGISTRY_ADDRESS),
+        address=Web3.to_checksum_address(registry_address),
         abi=REGISTRY_ABI,
     )
     account = w3.eth.account.from_key(private_key)
@@ -99,11 +113,10 @@ def _sync_log(session_id: str, results: dict) -> str:
     revert_reason = results.get("revert_reason") or ""
     flags = _build_flags(results)
 
-    # Fetch base fee and build EIP-1559 tx
     latest = w3.eth.get_block("latest")
     base_fee = latest.get("baseFeePerGas", w3.to_wei("0.1", "gwei"))
-    priority  = w3.to_wei("0.01", "gwei")
-    max_fee   = base_fee * 2 + priority
+    priority = w3.to_wei("0.01", "gwei")
+    max_fee = base_fee * 2 + priority
 
     tx = contract.functions.logSimulation(
         _uuid_to_bytes32(session_id),
@@ -117,10 +130,10 @@ def _sync_log(session_id: str, results: dict) -> str:
         "gas":                  200_000,
         "maxFeePerGas":         max_fee,
         "maxPriorityFeePerGas": priority,
-        "chainId":              421614,  # Arbitrum Sepolia
+        "chainId":              chain_id,
     })
 
-    signed  = w3.eth.account.sign_transaction(tx, private_key)
+    signed = w3.eth.account.sign_transaction(tx, private_key)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
     receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
 
@@ -130,19 +143,19 @@ def _sync_log(session_id: str, results: dict) -> str:
     return f"0x{tx_hash.hex()}"
 
 
-async def log_simulation_to_chain(session_id: str, results: dict) -> None:
+async def log_simulation_to_chain(session_id: str, results: dict,
+                                   chain_id: int = 421614) -> None:
     """
     Async wrapper — runs the blocking web3 call in the default executor.
+    Defaults to Arbitrum Sepolia (421614) to preserve existing behaviour.
     Never raises; logs errors so the worker loop is never interrupted.
     """
     try:
         tx_hash = await asyncio.get_event_loop().run_in_executor(
-            None, _sync_log, session_id, results
+            None, _sync_log, session_id, results, chain_id
         )
         print(f"[{session_id}] On-chain registry ✓  tx={tx_hash}")
     except EnvironmentError as exc:
-        # Signer key not configured — expected in local/CI environments
         logger.warning("[%s] Registry skipped: %s", session_id, exc)
     except Exception as exc:
-        # Non-fatal — simulation result already persisted to Neon + MongoDB
         logger.error("[%s] Registry write failed (non-fatal): %s", session_id, exc)

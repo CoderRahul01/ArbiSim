@@ -6,49 +6,72 @@ import { useAccount } from 'wagmi';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
-interface GasBreakdown {
-  l2_gas_used: number;
-  l1_gas_buffer: number;
-  host_io_penalty_gas: number;
-  total_fees_wei: string;
-}
+// ── Chain registry (mirrors gateway/src/chain-config.ts) ──────────────────
+const SUPPORTED_NETWORKS = [
+  { id: 'arbitrum-one',            label: 'Arbitrum One',            badge: null,  explorer: 'https://arbiscan.io' },
+  { id: 'arbitrum-sepolia',        label: 'Arbitrum Sepolia',        badge: null,  explorer: 'https://sepolia.arbiscan.io' },
+  { id: 'avalanche-mainnet',       label: 'Avalanche C-Chain',       badge: 'NEW', explorer: 'https://subnets.avax.network/c-chain' },
+  { id: 'avalanche-fuji',          label: 'Avalanche Fuji Testnet',  badge: 'NEW', explorer: 'https://subnets-test.avax.network/c-chain' },
+  { id: 'robinhood-chain-testnet', label: 'Robinhood Chain Testnet', badge: null,  explorer: '' },
+] as const;
 
-interface TimeboostData {
-  vulnerability_status: string;
-  mev_sandwich_risk_score: number;
-  timeboost_fastlane_recommended: boolean;
-  estimated_timeboost_premium_wei: string;
-}
+type NetworkId = typeof SUPPORTED_NETWORKS[number]['id'];
 
+const EXAMPLE_PAYLOADS: Record<NetworkId, object> = {
+  'arbitrum-one': {
+    network: 'arbitrum-one',
+    agent_address: '0x0000000000000000000000000000000000000001',
+    transactions: [{ to: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506', data: '0x38ed1739000000000000000000000000000000000000000000000000002386f26fc10000', value: '0' }],
+    max_slippage_tolerance: 2.0,
+  },
+  'arbitrum-sepolia': {
+    network: 'arbitrum-sepolia',
+    agent_address: '0x0000000000000000000000000000000000000001',
+    transactions: [{ to: '0x0000000000000000000000000000000000000002', data: '0x', value: '0' }],
+    max_slippage_tolerance: 2.0,
+  },
+  'avalanche-mainnet': {
+    network: 'avalanche-mainnet',
+    agent_address: '0x0000000000000000000000000000000000000001',
+    transactions: [{ to: '0x60aE616a2155Ee3d9A68541Ba4544862310933d4', data: '0x38ed1739000000000000000000000000000000000000000000000000002386f26fc10000', value: '0' }],
+    max_slippage_tolerance: 2.0,
+  },
+  'avalanche-fuji': {
+    network: 'avalanche-fuji',
+    agent_address: '0x742d35Cc6634C0532925a3b8A4Bc454e4438f44e',
+    transactions: [{ to: '0x5425890298aed601595a70AB815c96711a31Bc65', data: '0xa9059cbb000000000000000000000000742d35Cc6634C0532925a3b8A4Bc454e4438f44e0000000000000000000000000000000000000000000000000000000000989680', value: '0x0' }],
+    max_slippage_tolerance: 0.5,
+  },
+  'robinhood-chain-testnet': {
+    network: 'robinhood-chain-testnet',
+    agent_address: '0x0000000000000000000000000000000000000001',
+    transactions: [{ to: '0x0000000000000000000000000000000000000002', data: '0x', value: '0' }],
+    max_slippage_tolerance: 2.0,
+  },
+};
+
+// ── Types ─────────────────────────────────────────────────────────────────
 interface SimulationResult {
   status: 'APPROVED' | 'REJECTED' | 'PENDING' | 'ERROR';
   sessionId?: string;
+  session_id?: string;
   revertReason?: string | null;
   gasCostEth?: string;
   slippagePercent?: number;
   flags?: Record<string, boolean>;
-  gasBreakdown?: GasBreakdown;
-  timeboost?: TimeboostData;
+  gasBreakdown?: Record<string, string | number>;
+  timeboost?: Record<string, string | number | boolean>;
   stylusInkConsumed?: number;
+  network?: string;
   error?: string;
 }
 
-const EXAMPLE_PAYLOAD = JSON.stringify({
-  network: 'arbitrum-one',
-  agent_address: '0x0000000000000000000000000000000000000001',
-  transactions: [
-    {
-      to: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
-      data: '0x38ed1739000000000000000000000000000000000000000000000000002386f26fc10000',
-      value: '0',
-    },
-  ],
-  max_slippage_tolerance: 2.0,
-}, null, 2);
+// Flags that are danger (red) when true
+const DANGER_FLAGS = new Set(['execution_reverted', 'sandwich_detected', 'sig_failed', 'valid_until_expired', 'stylus_ink_overflow', 'low_agent_reputation', 'x402_payment_risk']);
+// Flags that are warning (amber) when true
+const WARNING_FLAGS = new Set(['high_slippage', 'timeboost_recommended', 'unsafe_allowance']);
 
-const DANGEROUS_FLAGS = new Set(['execution_reverted', 'sandwich_detected', 'sig_failed', 'valid_until_expired', 'stylus_ink_overflow']);
-
-// ── Sub-components defined at module level (not inline) ──────────────────
+// ── Sub-components ────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: SimulationResult['status'] }) {
   const styles: Record<SimulationResult['status'], string> = {
@@ -62,23 +85,24 @@ function StatusBadge({ status }: { status: SimulationResult['status'] }) {
   };
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-sm font-mono font-medium ${styles[status]}`}>
-      <span className={status === 'PENDING' ? 'animate-spin-slow' : ''}>{icons[status]}</span>
-      {status}
+      {icons[status]} {status}
     </span>
   );
 }
 
 function FlagRow({ flagKey, value }: { flagKey: string; value: boolean }) {
-  const isDangerous = DANGEROUS_FLAGS.has(flagKey) && value;
-  const isWarning = !DANGEROUS_FLAGS.has(flagKey) && value;
+  const isDanger = DANGER_FLAGS.has(flagKey) && value;
+  const isWarning = WARNING_FLAGS.has(flagKey) && value;
   return (
     <div className={`flex items-center justify-between px-4 py-2.5 rounded-md border transition-colors ${
-      isDangerous ? 'border-red-800/30 bg-red-950/20' :
-      isWarning   ? 'border-amber-800/30 bg-amber-950/20' :
+      isDanger  ? 'border-red-800/30 bg-red-950/20' :
+      isWarning ? 'border-amber-800/30 bg-amber-950/20' :
       'border-border bg-surface'
     }`}>
       <span className="font-mono text-sm text-text-secondary">{flagKey}</span>
-      <span className={`text-sm font-medium ${value ? (isDangerous ? 'text-red-400' : 'text-amber-400') : 'text-teal'}`}>
+      <span className={`text-sm font-medium ${
+        isDanger ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-teal'
+      }`}>
         {value ? 'true' : 'false'}
       </span>
     </div>
@@ -96,12 +120,13 @@ function KVRow({ label, value, highlight }: { label: string; value: string; high
   );
 }
 
-// ── Main page ────────────────────────────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────────────────────
 
 type Tab = 'flags' | 'gas' | 'timeboost' | 'raw';
 
 export default function DashboardPage() {
-  const [payload, setPayload] = useState(EXAMPLE_PAYLOAD);
+  const [network, setNetwork] = useState<NetworkId>('arbitrum-one');
+  const [payload, setPayload] = useState(JSON.stringify(EXAMPLE_PAYLOADS['arbitrum-one'], null, 2));
   const [apiKey, setApiKey] = useState('');
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -125,26 +150,27 @@ export default function DashboardPage() {
     } catch { /* leave as-is */ }
   }, [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load API key from localStorage on mount
   useEffect(() => {
     const stored = localStorage.getItem('arbisim_api_key') ?? '';
     setApiKey(stored.trim().replace(/[^\x20-\x7E]/g, ''));
   }, []);
 
+  const handleNetworkChange = useCallback((newNetwork: NetworkId) => {
+    setNetwork(newNetwork);
+    setPayload(JSON.stringify(EXAMPLE_PAYLOADS[newNetwork], null, 2));
+    setResult(null);
+  }, []);
+
+  const activeChain = SUPPORTED_NETWORKS.find(n => n.id === network)!;
+  const isAvalanche = network.startsWith('avalanche');
+
   const simulate = useCallback(async () => {
     const cleanKey = apiKey.trim().replace(/[^\x20-\x7E]/g, '');
-    if (!cleanKey) {
-      alert('Enter your API key above.');
-      return;
-    }
+    if (!cleanKey) { alert('Enter your API key above.'); return; }
 
     let parsed: unknown;
-    try {
-      parsed = JSON.parse(payload);
-    } catch {
-      setResult({ status: 'ERROR', error: 'Invalid JSON in request payload.' });
-      return;
-    }
+    try { parsed = JSON.parse(payload); }
+    catch { setResult({ status: 'ERROR', error: 'Invalid JSON in request payload.' }); return; }
 
     setLoading(true);
     setResult({ status: 'PENDING' });
@@ -157,14 +183,13 @@ export default function DashboardPage() {
       });
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({})) as { error?: { message?: string } };
-        setResult({ status: 'ERROR', error: errData?.error?.message ?? `HTTP ${res.status}` });
+        const errData = await res.json().catch(() => ({})) as { error?: string | { message?: string } };
+        const msg = typeof errData.error === 'string' ? errData.error : errData?.error?.message ?? `HTTP ${res.status}`;
+        setResult({ status: 'ERROR', error: msg });
         return;
       }
 
-      const data = await res.json() as SimulationResult & { session_id?: string };
-
-      // Map session_id → sessionId if backend returns snake_case
+      const data = await res.json() as SimulationResult;
       const sessionId = data.sessionId ?? data.session_id;
 
       if (sessionId && data.status === 'PENDING') {
@@ -175,18 +200,14 @@ export default function DashboardPage() {
           }).catch(() => null);
           if (!poll?.ok) continue;
           const pollData = await poll.json() as SimulationResult;
-          if (pollData.status !== 'PENDING') {
-            setResult(pollData);
-            return;
-          }
+          if (pollData.status !== 'PENDING') { setResult(pollData); return; }
         }
-        setResult({ status: 'ERROR', error: 'Simulation timed out after 30 seconds.' });
+        setResult({ status: 'ERROR', error: 'Simulation timed out after 90 seconds.' });
       } else {
         setResult(data);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Network error';
-      setResult({ status: 'ERROR', error: msg });
+      setResult({ status: 'ERROR', error: err instanceof Error ? err.message : 'Network error' });
     } finally {
       setLoading(false);
     }
@@ -197,12 +218,15 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="border-b border-border bg-surface/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="px-8 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-text-primary">Live simulation demo</span>
-          </div>
+          <span className="text-sm font-medium text-text-primary">Live simulation</span>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-teal animate-pulse-dot" />
-            <span className="text-xs text-text-tertiary font-mono">Arbitrum One fork</span>
+            <span className="text-xs text-text-tertiary font-mono">{activeChain.label} fork</span>
+            {isAvalanche && (
+              <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-orange-950/50 border border-orange-600/30 text-orange-400">
+                Avalanche
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -211,6 +235,38 @@ export default function DashboardPage() {
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Input panel */}
           <div className="space-y-4">
+            {/* Network selector */}
+            <div>
+              <label className="block text-xs font-mono text-text-tertiary uppercase tracking-widest mb-2">Network</label>
+              <div className="flex flex-wrap gap-2">
+                {SUPPORTED_NETWORKS.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={() => handleNetworkChange(n.id)}
+                    className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${
+                      network === n.id
+                        ? 'border-coral/60 bg-coral/10 text-coral'
+                        : 'border-border bg-surface text-text-tertiary hover:border-coral/30 hover:text-text-secondary'
+                    }`}
+                  >
+                    {n.label}
+                    {n.badge && (
+                      <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                        {n.badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Avalanche hint */}
+            {isAvalanche && (
+              <div className="px-4 py-3 rounded-lg border border-orange-600/20 bg-orange-950/15 text-xs text-orange-300/80 font-mono">
+                Avalanche fork: ERC-8004 reputation check + x402 payment safety. No Nitro gas math.
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-mono text-text-tertiary uppercase tracking-widest mb-2">API Key</label>
               <input
@@ -225,6 +281,7 @@ export default function DashboardPage() {
                 className="w-full px-4 py-3 rounded-lg border border-border bg-surface text-text-primary font-mono text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors"
               />
             </div>
+
             <div>
               <label className="block text-xs font-mono text-text-tertiary uppercase tracking-widest mb-2">Transaction payload (JSON)</label>
               <textarea
@@ -235,6 +292,7 @@ export default function DashboardPage() {
                 className="w-full px-4 py-3 rounded-lg border border-border bg-surface text-text-primary font-mono text-sm resize-none focus:outline-none focus:border-coral/50 transition-colors leading-relaxed"
               />
             </div>
+
             <button
               onClick={simulate}
               disabled={loading}
@@ -246,12 +304,13 @@ export default function DashboardPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
                   </svg>
-                  Simulating...
+                  Simulating on {activeChain.label}…
                 </>
-              ) : 'Run simulation'}
+              ) : `Run simulation on ${activeChain.label}`}
             </button>
+
             <p className="text-xs text-text-tertiary text-center">
-              No real transaction is submitted. This runs against an ephemeral Arbitrum fork.
+              No real transaction is submitted — runs against an ephemeral {activeChain.label} fork.
             </p>
           </div>
 
@@ -261,15 +320,20 @@ export default function DashboardPage() {
               <div className="rounded-xl border border-border bg-surface h-full flex flex-col items-center justify-center gap-4 py-20 text-center px-8">
                 <div className="w-12 h-12 rounded-xl bg-coral/10 border border-coral/20 flex items-center justify-center text-coral text-2xl">⬡</div>
                 <p className="text-text-primary font-medium">Results appear here</p>
-                <p className="text-sm text-text-tertiary max-w-xs">Paste a transaction payload, add your API key, and hit Run simulation.</p>
+                <p className="text-sm text-text-tertiary max-w-xs">Select a network, paste a transaction payload, add your API key, and hit Run.</p>
               </div>
             ) : (
               <div className="rounded-xl border border-border bg-surface overflow-hidden animate-slide-up">
                 <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                   <StatusBadge status={result.status} />
-                  {result.sessionId && (
-                    <span className="text-xs font-mono text-text-tertiary">{result.sessionId.slice(0, 8)}…</span>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {result.network && (
+                      <span className="text-xs font-mono text-text-tertiary">{result.network}</span>
+                    )}
+                    {result.sessionId && (
+                      <span className="text-xs font-mono text-text-tertiary">{result.sessionId.slice(0, 8)}…</span>
+                    )}
+                  </div>
                 </div>
 
                 {result.status === 'ERROR' && (
@@ -319,7 +383,9 @@ export default function DashboardPage() {
 
                       {tab === 'flags' && result.flags && (
                         <div className="space-y-1.5 pb-6">
-                          {Object.entries(result.flags).map(([k, v]) => <FlagRow key={k} flagKey={k} value={v} />)}
+                          {Object.entries(result.flags).map(([k, v]) => (
+                            <FlagRow key={k} flagKey={k} value={Boolean(v)} />
+                          ))}
                         </div>
                       )}
 
@@ -349,11 +415,10 @@ export default function DashboardPage() {
                       )}
                     </div>
 
-                    {/* Explorer deep-link */}
-                    {result.sessionId && (
+                    {(result.sessionId ?? result.session_id) && (
                       <div className="px-6 pb-4">
                         <Link
-                          href={`/dashboard/simulate/${result.sessionId}`}
+                          href={`/dashboard/simulate/${result.sessionId ?? result.session_id}`}
                           className="inline-flex items-center gap-1.5 text-xs font-mono text-coral hover:text-coral-hover transition-colors"
                         >
                           View full explorer →

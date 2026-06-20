@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 import { getSimulation, getMongoDb, updateSimulationStatusAndTelemetry, pgPool, listSimulations } from './db.js';
 import { submitSimulationJob } from './queue.js';
 import { MCP_TOOLS, callMcpTool } from './mcp-tools.js';
+import { VALID_NETWORKS } from './chain-config.js';
 
 export const router = Router();
 
@@ -126,8 +127,8 @@ router.post('/simulate', async (req: Request, res: Response): Promise<void> => {
   const { network, agent_address, transactions, max_slippage_tolerance, userOp, entrypointVersion } = req.body;
 
   // Validation
-  if (!network || !['arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet'].includes(network)) {
-    res.status(400).json({ error: "Invalid 'network'. Must be one of 'arbitrum-one', 'arbitrum-sepolia', 'robinhood-chain-testnet'" });
+  if (!network || !VALID_NETWORKS.includes(network)) {
+    res.status(400).json({ error: `Invalid 'network'. Supported: ${VALID_NETWORKS.join(', ')}` });
     return;
   }
 
@@ -212,6 +213,83 @@ router.post('/simulate', async (req: Request, res: Response): Promise<void> => {
 });
 
 /**
+ * POST /api/v1/simulate/x402
+ * Dedicated x402 payment pre-flight simulation.
+ * Builds a standard ERC-20 transfer job and queues it with simulation_type=x402_payment.
+ */
+router.post('/simulate/x402', async (req: Request, res: Response): Promise<void> => {
+  const { network, from_address, to_address, token_address, amount_raw, erc8004_check = true } = req.body;
+
+  if (!network || !VALID_NETWORKS.includes(network)) {
+    res.status(400).json({ error: `Invalid 'network'. Supported: ${VALID_NETWORKS.join(', ')}` });
+    return;
+  }
+  if (!from_address || !to_address || !token_address || !amount_raw) {
+    res.status(400).json({ error: "Missing required fields: from_address, to_address, token_address, amount_raw" });
+    return;
+  }
+  if (typeof amount_raw !== 'string' && typeof amount_raw !== 'number') {
+    res.status(400).json({ error: "'amount_raw' must be a string or number (raw token units, no decimals)" });
+    return;
+  }
+
+  let amountHex: string;
+  try {
+    amountHex = BigInt(amount_raw).toString(16).padStart(64, '0');
+  } catch {
+    res.status(400).json({ error: "'amount_raw' is not a valid integer" });
+    return;
+  }
+
+  // Build ERC-20 transfer(address,uint256) calldata
+  const transferData = `0xa9059cbb${to_address.replace(/^0x/i, '').toLowerCase().padStart(64, '0')}${amountHex}`;
+
+  const transactions = [{
+    to: token_address,
+    data: transferData,
+    value: '0',
+    gas: '0x30D40',
+  }];
+
+  const sessionId = uuidv4();
+  const queuePayload = {
+    is_user_op: false,
+    transactions,
+    network,
+    agent_address: from_address,
+    max_slippage_tolerance: 0,
+    metadata: {
+      simulation_type: 'x402_payment',
+      payee: to_address,
+      token: token_address,
+      amount_raw: String(amount_raw),
+      erc8004_check,
+    },
+  };
+
+  try {
+    const apiKeyId = (req as any).apiKeyId ?? null;
+    await submitSimulationJob(sessionId, network, from_address, transactions, 0, apiKeyId);
+    await pgPool.query(
+      `UPDATE simulation_queue SET payload = $1 WHERE session_id = $2`,
+      [JSON.stringify(queuePayload), sessionId]
+    );
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
+    res.status(202).json({
+      session_id: sessionId,
+      simulation_type: 'x402_payment',
+      status: 'PENDING',
+      poll_url: `/api/v1/simulate/${sessionId}`,
+      ...(appUrl && { explorer_url: `${appUrl}/sim/${sessionId}` }),
+    });
+  } catch (error) {
+    console.error('Failed to submit x402 simulation job:', error);
+    res.status(500).json({ error: 'Internal server error during x402 simulation queuing.' });
+  }
+});
+
+/**
  * @openapi
  * /api/v1/simulate/{session_id}:
  *   get:
@@ -245,7 +323,8 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
       : undefined;
 
     // Synthesize flags from telemetry so the dashboard can display them
-    const flags: Record<string, boolean> | null = telemetry ? {
+    const chainExtras = telemetry?.chain_extras ?? {};
+    const flags: Record<string, boolean | string | number | null> | null = telemetry ? {
       execution_reverted: !!(telemetry.revert_reason),
       high_slippage: !isNaN(slippagePct as number) && (slippagePct as number) > 2,
       sandwich_detected: (telemetry.timeboost_mev_telemetry?.mev_sandwich_risk_score ?? 0) > 0.5,
@@ -254,6 +333,9 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
       valid_until_expired: typeof telemetry.revert_reason === 'string' && telemetry.revert_reason.includes('expired'),
       timeboost_recommended: !!(telemetry.timeboost_mev_telemetry?.timeboost_fastlane_recommended),
       stylus_ink_overflow: (telemetry.stylus_ink_consumed ?? 0) > 100_000_000,
+      // Avalanche-specific flags (present when chain_extras populated)
+      low_agent_reputation: !!(chainExtras.low_agent_reputation),
+      x402_payment_risk: !!(chainExtras.x402_payment_risk),
     } : null;
 
     // 3. Fetch original queue payload
@@ -526,7 +608,8 @@ publicRouter.get('/public/:sessionId', async (req: Request, res: Response): Prom
       ? parseFloat(telemetry.slippage_detected)
       : undefined;
 
-    const flags: Record<string, boolean> | null = telemetry ? {
+    const chainExtrasPublic = telemetry?.chain_extras ?? {};
+    const flags: Record<string, boolean | null> | null = telemetry ? {
       execution_reverted: !!(telemetry.revert_reason),
       high_slippage: !isNaN(slippagePct as number) && (slippagePct as number) > 2,
       sandwich_detected: (telemetry.timeboost_mev_telemetry?.mev_sandwich_risk_score ?? 0) > 0.5,
@@ -535,6 +618,8 @@ publicRouter.get('/public/:sessionId', async (req: Request, res: Response): Prom
       valid_until_expired: typeof telemetry.revert_reason === 'string' && telemetry.revert_reason.includes('expired'),
       timeboost_recommended: !!(telemetry.timeboost_mev_telemetry?.timeboost_fastlane_recommended),
       stylus_ink_overflow: (telemetry.stylus_ink_consumed ?? 0) > 100_000_000,
+      low_agent_reputation: !!(chainExtrasPublic.low_agent_reputation),
+      x402_payment_risk: !!(chainExtrasPublic.x402_payment_risk),
     } : null;
 
     // Return sanitised result — no API key info, no owner details
