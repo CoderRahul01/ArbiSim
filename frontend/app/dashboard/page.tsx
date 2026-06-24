@@ -71,7 +71,7 @@ const CHECKLIST_ITEMS = [
   {
     step: '02',
     title: 'Run your first simulation',
-    description: 'Paste a transaction payload and click Run — get an APPROVED or REJECTED verdict in seconds.',
+    description: 'Paste a transaction payload and click Run - get an APPROVED or REJECTED verdict in seconds.',
     href: '/dashboard/simulate',
     cta: 'Open playground →',
   },
@@ -122,13 +122,13 @@ export default function DashboardOverview() {
     },
     {
       label: 'Approval rate',
-      value: stats.approval_rate !== null ? `${stats.approval_rate}%` : '—',
+      value: stats.approval_rate !== null ? `${stats.approval_rate}%` : '-',
       sub: stats.approval_rate !== null ? 'of terminal simulations' : 'run first simulation',
       color: stats.approval_rate !== null ? 'text-text-primary' : 'text-text-tertiary',
     },
     {
       label: 'Quota used',
-      value: stats.quota_used > 0 ? `${stats.quota_used} / ${stats.quota_limit}` : '—',
+      value: stats.quota_used > 0 ? `${stats.quota_used} / ${stats.quota_limit}` : '-',
       sub: 'resets monthly',
       color: stats.quota_used > 0 ? 'text-text-primary' : 'text-text-tertiary',
     },
@@ -451,11 +451,11 @@ export default function DashboardOverview() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-mono text-coral bg-coral/10 border border-coral/20 px-2 py-0.5 rounded">MCP</span>
-                <h3 className="text-sm font-semibold text-text-primary">preflight_simulate — native MCP tool</h3>
+                <h3 className="text-sm font-semibold text-text-primary">preflight_simulate - native MCP tool</h3>
               </div>
               <p className="text-xs text-text-secondary leading-relaxed max-w-xl">
                 Call ArbiSim Guard directly from Vibekit, Eliza, or LangGraph using the Model Context Protocol.
-                No REST integration needed — your agent calls <code className="font-mono text-coral">preflight_simulate</code> and gets a structured APPROVED/REJECTED verdict.
+                No REST integration needed - your agent calls <code className="font-mono text-coral">preflight_simulate</code> and gets a structured APPROVED/REJECTED verdict.
               </p>
             </div>
             <a href="https://github.com/arbisim-guard/docs/mcp" target="_blank" rel="noopener noreferrer"

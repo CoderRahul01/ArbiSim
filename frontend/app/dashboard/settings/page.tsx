@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { SUPPORTED_NETWORKS } from '../../../lib/chains';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -238,9 +239,11 @@ export default function SettingsPage() {
                   value={defaultNetwork}
                   onChange={e => setDefaultNetwork(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-lg border border-border bg-elevated text-text-primary text-sm focus:outline-none focus:border-coral/50 transition-colors appearance-none">
-                  <option value="arbitrum-one">Arbitrum One (mainnet)</option>
-                  <option value="arbitrum-sepolia">Arbitrum Sepolia (testnet)</option>
-                  <option value="robinhood-chain-testnet">Robinhood Chain Testnet</option>
+                  {Object.values(SUPPORTED_NETWORKS).map(chain => (
+                    <option key={chain.id} value={chain.id} disabled={chain.comingSoon}>
+                      {chain.displayName}{chain.comingSoon ? ' (coming soon)' : ''}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="Max slippage tolerance (%)" hint="Simulations with slippage above this threshold will set high_slippage: true.">

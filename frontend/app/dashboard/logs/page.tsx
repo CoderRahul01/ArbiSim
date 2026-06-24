@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { SUPPORTED_NETWORKS } from '../../../lib/chains';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -222,8 +223,9 @@ export default function LogsPage() {
                 className="px-3 py-1.5 rounded-lg border border-border bg-elevated text-text-primary text-xs focus:outline-none focus:border-coral/50 transition-colors"
               >
                 <option value="All">All Networks</option>
-                <option value="arbitrum-one">Arbitrum One</option>
-                <option value="arbitrum-sepolia">Arbitrum Sepolia</option>
+                {Object.values(SUPPORTED_NETWORKS).map(chain => (
+                  <option key={chain.id} value={chain.id}>{chain.displayName}</option>
+                ))}
               </select>
             </div>
 
@@ -340,8 +342,8 @@ export default function LogsPage() {
                 {/* Rows */}
                 {filteredLogs.map(log => {
                   const timeInfo = formatRelativeTime(log.created_at);
-                  const gasCost = log.telemetry?.gas_cost_eth ?? '—';
-                  const netPnl = log.telemetry?.net_pnl_usd ?? '—';
+                  const gasCost = log.telemetry?.gas_cost_eth ?? '-';
+                  const netPnl = log.telemetry?.net_pnl_usd ?? '-';
                   
                   const isPositive = netPnl.startsWith('+');
                   const isNegative = netPnl.startsWith('-');

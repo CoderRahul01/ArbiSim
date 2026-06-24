@@ -237,9 +237,9 @@ export default function SimulationExplorerPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 animate-slide-up" style={{ animationDelay: '50ms' }}>
               {[
                 { label: 'Verdict', value: data.status },
-                { label: 'Gas cost', value: data.gasCostEth ? `${data.gasCostEth} ETH` : '—' },
-                { label: 'Slippage', value: data.slippagePercent != null ? `${data.slippagePercent.toFixed(2)}%` : '—' },
-                { label: 'Net P&L', value: data.netPnlUsd ?? '—' },
+                { label: 'Gas cost', value: data.gasCostEth ? `${data.gasCostEth} ETH` : '-' },
+                { label: 'Slippage', value: data.slippagePercent != null ? `${data.slippagePercent.toFixed(2)}%` : '-' },
+                { label: 'Net P&L', value: data.netPnlUsd ?? '-' },
               ].map(s => (
                 <div key={s.label} className="rounded-lg border border-border bg-surface px-4 py-3">
                   <p className="text-xs text-text-tertiary font-mono uppercase tracking-wider mb-1">{s.label}</p>
@@ -314,7 +314,7 @@ export default function SimulationExplorerPage() {
                         const delta = parseFloat(bt.delta || '0');
                         return (
                           <tr key={i} className="hover:bg-elevated/50 transition-colors">
-                            <td className="px-4 py-2 font-mono text-text-primary">{bt.symbol || bt.token?.slice(0, 10) || '—'}</td>
+                            <td className="px-4 py-2 font-mono text-text-primary">{bt.symbol || bt.token?.slice(0, 10) || '-'}</td>
                             <td className="px-4 py-2 font-mono text-text-secondary text-right">{bt.pre_balance}</td>
                             <td className="px-4 py-2 font-mono text-text-secondary text-right">{bt.post_balance}</td>
                             <td className={`px-4 py-2 font-mono text-right font-medium ${delta >= 0 ? 'text-teal' : 'text-red-400'}`}>

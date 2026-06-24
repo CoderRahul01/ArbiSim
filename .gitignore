@@ -65,3 +65,4 @@ out/
 cache/
 broadcast/
 frontend/tsconfig.tsbuildinfo
+.vercel

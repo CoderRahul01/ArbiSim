@@ -337,9 +337,9 @@ export default function McpPlaygroundPage() {
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: 'Gas cost', value: simResult.gas_cost_eth ? `${simResult.gas_cost_eth} ETH` : '—' },
-                    { label: 'Net P&L',  value: simResult.net_pnl_usd ? `$${simResult.net_pnl_usd}` : '—' },
-                    { label: 'Slippage', value: simResult.slippage_detected ?? '—' },
+                    { label: 'Gas cost', value: simResult.gas_cost_eth ? `${simResult.gas_cost_eth} ETH` : '-' },
+                    { label: 'Net P&L',  value: simResult.net_pnl_usd ? `$${simResult.net_pnl_usd}` : '-' },
+                    { label: 'Slippage', value: simResult.slippage_detected ?? '-' },
                   ].map(m => (
                     <div key={m.label} className="p-3 rounded-lg bg-surface border border-border">
                       <p className="text-xs text-text-tertiary mb-1 font-mono">{m.label}</p>

@@ -296,6 +296,11 @@ class AnalyticalBrain:
             self.w3.provider.make_request("anvil_impersonateAccount", [executor_address])
             self.w3.provider.make_request("anvil_setBalance", [executor_address, "0x56BC75E2D63100000"])
 
+            # Fund the smart account sender so it passes gas checks during handleOps
+            sender_addr = formatted_op.get("sender")
+            if sender_addr:
+                self.w3.provider.make_request("anvil_setBalance", [sender_addr, "0x56BC75E2D63100000"])
+
             try:
                 tx_hash = entrypoint_contract.functions.handleOps(
                     [formatted_op],

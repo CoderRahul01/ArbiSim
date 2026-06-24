@@ -111,6 +111,21 @@ export default {
 
         if (!isValid) return jsonError(401, 'INVALID_SIGNATURE', 'Signature verification failed.', origin);
 
+        // Notify Gateway to register/welcome the user and grant welcome credits
+        try {
+          const gatewayUrl = env.GATEWAY_URL.replace(/\/$/, '');
+          await fetch(`${gatewayUrl}/admin/register-user`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': env.ADMIN_API_KEY || '',
+            },
+            body: JSON.stringify({ address: address.toLowerCase() }),
+          });
+        } catch (registerErr) {
+          console.error('Failed to notify gateway of user registration:', registerErr);
+        }
+
         const token = await jwt.sign({
           address: address.toLowerCase(),
           exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 1 day
@@ -309,6 +324,47 @@ export default {
         });
       } catch (err: any) {
         return jsonError(500, 'INTERNAL_ERROR', err.message || 'Upgrade failed.', origin);
+      }
+    }
+
+    // ── Proxy user-facing admin routes (credits/referrals) via JWT verification ──
+    if (url.pathname.startsWith('/api/v1/admin/')) {
+      const token = request.headers.get('X-API-Key') || request.headers.get('Authorization')?.replace('Bearer ', '');
+      if (!token) {
+        return jsonError(401, 'UNAUTHORIZED', 'Missing token.', origin);
+      }
+      const isValid = await jwt.verify(token, env.JWT_SECRET || 'default_dev_secret');
+      if (!isValid) return jsonError(401, 'UNAUTHORIZED', 'Invalid or expired token.', origin);
+
+      const decoded = jwt.decode(token) as { payload: { address: string } };
+      const address = decoded?.payload?.address?.toLowerCase() || '';
+
+      // Forward to Gateway admin endpoints: /api/v1/admin/* -> /admin/*
+      const gatewayPath = url.pathname.replace('/api/v1', '');
+      const targetUrl = env.GATEWAY_URL.replace(/\/$/, '') + gatewayPath + url.search;
+
+      const proxyRequest = new Request(targetUrl, {
+        method: request.method,
+        headers: {
+          ...Object.fromEntries(request.headers.entries()),
+          'X-API-Key': env.ADMIN_API_KEY || '',
+          'X-User-Wallet': address,
+        },
+        body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : null,
+      });
+
+      try {
+        const proxyResp = await fetch(proxyRequest);
+        const body = await proxyResp.arrayBuffer();
+        return new Response(body, {
+          status: proxyResp.status,
+          headers: {
+            'Content-Type': proxyResp.headers.get('Content-Type') ?? 'application/json',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch {
+        return jsonError(502, 'GATEWAY_ERROR', 'Gateway unreachable.', origin);
       }
     }
 

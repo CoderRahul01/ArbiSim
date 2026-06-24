@@ -7,15 +7,8 @@ import { useAccount } from 'wagmi';
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
 // ── Chain registry (mirrors gateway/src/chain-config.ts) ──────────────────
-const SUPPORTED_NETWORKS = [
-  { id: 'arbitrum-one',            label: 'Arbitrum One',            badge: null,  explorer: 'https://arbiscan.io' },
-  { id: 'arbitrum-sepolia',        label: 'Arbitrum Sepolia',        badge: null,  explorer: 'https://sepolia.arbiscan.io' },
-  { id: 'avalanche-mainnet',       label: 'Avalanche C-Chain',       badge: 'NEW', explorer: 'https://subnets.avax.network/c-chain' },
-  { id: 'avalanche-fuji',          label: 'Avalanche Fuji Testnet',  badge: 'NEW', explorer: 'https://subnets-test.avax.network/c-chain' },
-  { id: 'robinhood-chain-testnet', label: 'Robinhood Chain Testnet', badge: null,  explorer: '' },
-] as const;
-
-type NetworkId = typeof SUPPORTED_NETWORKS[number]['id'];
+import { SUPPORTED_NETWORKS } from '../../../lib/chains';
+type NetworkId = string;
 
 const EXAMPLE_PAYLOADS: Record<NetworkId, object> = {
   'arbitrum-one': {
@@ -161,7 +154,7 @@ export default function DashboardPage() {
     setResult(null);
   }, []);
 
-  const activeChain = SUPPORTED_NETWORKS.find(n => n.id === network)!;
+  const activeChain = SUPPORTED_NETWORKS[network];
   const isAvalanche = network.startsWith('avalanche');
 
   const simulate = useCallback(async () => {
@@ -221,7 +214,7 @@ export default function DashboardPage() {
           <span className="text-sm font-medium text-text-primary">Live simulation</span>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-teal animate-pulse-dot" />
-            <span className="text-xs text-text-tertiary font-mono">{activeChain.label} fork</span>
+            <span className="text-xs text-text-tertiary font-mono">{activeChain.displayName} fork</span>
             {isAvalanche && (
               <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-orange-950/50 border border-orange-600/30 text-orange-400">
                 Avalanche
@@ -239,20 +232,28 @@ export default function DashboardPage() {
             <div>
               <label className="block text-xs font-mono text-text-tertiary uppercase tracking-widest mb-2">Network</label>
               <div className="flex flex-wrap gap-2">
-                {SUPPORTED_NETWORKS.map(n => (
+                {Object.values(SUPPORTED_NETWORKS).map(n => (
                   <button
                     key={n.id}
+                    disabled={n.comingSoon}
                     onClick={() => handleNetworkChange(n.id)}
                     className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${
                       network === n.id
-                        ? 'border-coral/60 bg-coral/10 text-coral'
+                        ? 'border-coral/60 bg-coral/10 text-coral font-medium'
+                        : n.comingSoon
+                        ? 'border-border/40 bg-surface/30 text-text-tertiary/40 opacity-50 cursor-not-allowed'
                         : 'border-border bg-surface text-text-tertiary hover:border-coral/30 hover:text-text-secondary'
                     }`}
                   >
-                    {n.label}
-                    {n.badge && (
+                    {n.displayName}
+                    {n.badge && !n.comingSoon && (
                       <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">
                         {n.badge}
+                      </span>
+                    )}
+                    {n.comingSoon && (
+                      <span className="px-1 py-0.5 rounded text-[9px] font-semibold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                        Soon
                       </span>
                     )}
                   </button>
@@ -304,13 +305,13 @@ export default function DashboardPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
                   </svg>
-                  Simulating on {activeChain.label}…
+                  Simulating on {activeChain.displayName}...
                 </>
-              ) : `Run simulation on ${activeChain.label}`}
+              ) : `Run simulation on ${activeChain.displayName}`}
             </button>
 
             <p className="text-xs text-text-tertiary text-center">
-              No real transaction is submitted — runs against an ephemeral {activeChain.label} fork.
+              No real transaction is submitted - runs against an ephemeral {activeChain.displayName} fork.
             </p>
           </div>
 
@@ -353,8 +354,8 @@ export default function DashboardPage() {
                   <>
                     <div className="grid grid-cols-3 divide-x divide-border border-b border-border">
                       {[
-                        { label: 'Gas cost',   value: result.gasCostEth ? `${result.gasCostEth} ETH` : '—' },
-                        { label: 'Slippage',   value: result.slippagePercent != null ? `${result.slippagePercent.toFixed(2)}%` : '—' },
+                        { label: 'Gas cost',   value: result.gasCostEth ? `${result.gasCostEth} ETH` : '-' },
+                        { label: 'Slippage',   value: result.slippagePercent != null ? `${result.slippagePercent.toFixed(2)}%` : '-' },
                         { label: 'Stylus ink', value: result.stylusInkConsumed ? `${(result.stylusInkConsumed / 1000).toFixed(1)}k` : '0' },
                       ].map(s => (
                         <div key={s.label} className="px-4 py-3 text-center">

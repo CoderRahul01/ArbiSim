@@ -34,11 +34,11 @@ export default function DashboardToasts() {
         const pct   = limit > 0 ? Math.round((used / limit) * 100) : 0;
 
         if (pct >= 100) {
-          setAlert({ level: 'danger', message: 'Monthly quota exhausted — all simulation requests are being rejected. Upgrade to continue.' });
+          setAlert({ level: 'danger', message: 'Monthly quota exhausted - all simulation requests are being rejected. Upgrade to continue.' });
         } else if (pct >= 80) {
-          setAlert({ level: 'warn', message: `${pct}% of monthly quota used — ${(limit - used).toLocaleString()} simulations remaining this month.` });
+          setAlert({ level: 'warn', message: `${pct}% of monthly quota used - ${(limit - used).toLocaleString()} simulations remaining this month.` });
         } else if ((data.today ?? 0) >= 5 && data.approval_rate != null && data.approval_rate < 50) {
-          setAlert({ level: 'warn', message: `High rejection rate this month (${data.approval_rate}% approval) — review your transaction parameters.` });
+          setAlert({ level: 'warn', message: `High rejection rate this month (${data.approval_rate}% approval) - review your transaction parameters.` });
         }
       })
       .catch(() => {});
