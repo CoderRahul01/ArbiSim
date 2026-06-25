@@ -11,6 +11,9 @@ interface LiveStats {
   approval_rate: number | null;
   quota_used: number;
   quota_limit: number;
+  total_users: number;
+  paid_users: number;
+  revenue_usdc: string;
 }
 
 interface AnalyticsData {
@@ -23,6 +26,7 @@ interface AnalyticsData {
 function useLiveStats(): LiveStats {
   const [stats, setStats] = useState<LiveStats>({
     today: 0, month: 0, approval_rate: null, quota_used: 0, quota_limit: 500,
+    total_users: 0, paid_users: 0, revenue_usdc: '0.00',
   });
 
   useEffect(() => {
@@ -191,6 +195,21 @@ export default function DashboardOverview() {
       </div>
 
       <div className="flex-1 px-6 md:px-8 py-8 max-w-5xl w-full mx-auto">
+
+        {/* Growth row */}
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          {[
+            { label: 'Total users',    value: stats.total_users > 0 ? String(stats.total_users) : '—', sub: 'signed-in wallets' },
+            { label: 'Paid users',     value: stats.paid_users  > 0 ? String(stats.paid_users)  : '—', sub: 'upgraded accounts' },
+            { label: 'Revenue (USDC)', value: Number(stats.revenue_usdc) > 0 ? `$${stats.revenue_usdc}` : '—', sub: 'all time' },
+          ].map(s => (
+            <div key={s.label} className="p-4 rounded-xl border border-border bg-elevated">
+              <p className="text-xs text-text-tertiary mb-1 font-mono">{s.label}</p>
+              <p className="text-xl font-semibold font-mono text-text-primary">{s.value}</p>
+              <p className="text-xs text-text-tertiary mt-0.5">{s.sub}</p>
+            </div>
+          ))}
+        </div>
 
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">

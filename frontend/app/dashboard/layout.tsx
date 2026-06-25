@@ -130,6 +130,9 @@ function useQuotaStats(): QuotaStats {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { isConnected } = useAccount();
+  const { open } = useAppKit();
+  const { disconnect } = useDisconnect();
   const quotaStats = useQuotaStats();
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [jwt, setJwt] = useState<string | null>(null);
@@ -211,7 +214,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </p>
               <div className="w-full flex flex-col gap-3">
                 <button
-                  onClick={() => open({ view: 'Account' })}
+                  onClick={() => (open as (opts: { view: string }) => void)({ view: 'Account' })}
                   className="w-full py-3 rounded-xl bg-coral text-white text-xs font-semibold hover:bg-coral-hover shadow-lg shadow-coral/25 transition-all duration-150 active:scale-[0.98]"
                 >
                   Sign Authentication Message
