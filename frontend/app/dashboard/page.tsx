@@ -11,9 +11,14 @@ interface LiveStats {
   approval_rate: number | null;
   quota_used: number;
   quota_limit: number;
-  total_users: number;
-  paid_users: number;
-  revenue_usdc: string;
+}
+
+interface RecentSim {
+  session_id: string;
+  network: string;
+  status: string;
+  telemetry: { gas_cost_eth?: string | number; net_pnl_usd?: string | number } | null;
+  created_at: string;
 }
 
 interface AnalyticsData {
@@ -26,7 +31,6 @@ interface AnalyticsData {
 function useLiveStats(): LiveStats {
   const [stats, setStats] = useState<LiveStats>({
     today: 0, month: 0, approval_rate: null, quota_used: 0, quota_limit: 500,
-    total_users: 0, paid_users: 0, revenue_usdc: '0.00',
   });
 
   useEffect(() => {
@@ -64,6 +68,35 @@ function useAnalytics(): AnalyticsData | null {
   return analytics;
 }
 
+function useRecentSims(): RecentSim[] {
+  const [sims, setSims] = useState<RecentSim[]>([]);
+
+  useEffect(() => {
+    const raw = typeof window !== 'undefined' ? (localStorage.getItem('arbisim_api_key') || '') : '';
+    const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
+    if (!key) return;
+
+    fetch(`${CF_WORKER_URL}/api/v1/logs?limit=5`, {
+      headers: { 'X-API-Key': key },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { logs?: RecentSim[] } | null) => {
+        if (data?.logs) setSims(data.logs);
+      })
+      .catch(() => {});
+  }, []);
+
+  return sims;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
 const CHECKLIST_ITEMS = [
   {
     step: '01',
@@ -99,6 +132,7 @@ const NETWORK_STATUS = [
 export default function DashboardOverview() {
   const stats = useLiveStats();
   const analytics = useAnalytics();
+  const recentSims = useRecentSims();
   const [hasApiKey, setHasApiKey] = useState(false);
 
   useEffect(() => {
@@ -196,21 +230,6 @@ export default function DashboardOverview() {
 
       <div className="flex-1 px-6 md:px-8 py-8 max-w-5xl w-full mx-auto">
 
-        {/* Growth row */}
-        <div className="grid grid-cols-3 gap-4 mb-4">
-          {[
-            { label: 'Total users',    value: stats.total_users > 0 ? String(stats.total_users) : '—', sub: 'signed-in wallets' },
-            { label: 'Paid users',     value: stats.paid_users  > 0 ? String(stats.paid_users)  : '—', sub: 'upgraded accounts' },
-            { label: 'Revenue (USDC)', value: Number(stats.revenue_usdc) > 0 ? `$${stats.revenue_usdc}` : '—', sub: 'all time' },
-          ].map(s => (
-            <div key={s.label} className="p-4 rounded-xl border border-border bg-elevated">
-              <p className="text-xs text-text-tertiary mb-1 font-mono">{s.label}</p>
-              <p className="text-xl font-semibold font-mono text-text-primary">{s.value}</p>
-              <p className="text-xs text-text-tertiary mt-0.5">{s.sub}</p>
-            </div>
-          ))}
-        </div>
-
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {statCards.map(s => (
@@ -237,19 +256,18 @@ export default function DashboardOverview() {
                 <p className="text-[10px] text-text-tertiary mb-4">Daily ratio of approved vs rejected simulations</p>
               </div>
 
-              <div className="flex items-end gap-[2px] h-[100px] justify-between border-b border-border pb-1">
-                {approvalChartData.map((d, idx) => {
-                  const dayNum = new Date(d.date).getDate();
-                  const showLabel = idx % 5 === 0;
-                  
-                  return (
+              {approvalChartData.every(d => d.total === 0) ? (
+                <div className="flex flex-col items-center justify-center h-[100px] border border-dashed border-border rounded-lg">
+                  <p className="text-[10px] text-text-tertiary text-center">Run a simulation to start seeing trends.</p>
+                  <Link href="/dashboard/simulate" className="text-[10px] text-coral hover:text-coral-hover mt-1">Run one now →</Link>
+                </div>
+              ) : (
+                <div className="flex items-end gap-[2px] h-[100px] justify-between border-b border-border pb-1">
+                  {approvalChartData.map((d, idx) => (
                     <div key={d.date} className="group relative flex-1 flex flex-col justify-end h-full cursor-pointer">
-                      {/* Tooltip */}
                       <div className="group-hover:block hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-zinc-950 border border-border text-[10px] text-text-primary px-2 py-1 rounded shadow-xl whitespace-nowrap z-20 font-mono">
                         {new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: {d.approved} approved, {d.rejected} rejected ({d.rate}%)
                       </div>
-
-                      {/* Stacked bar */}
                       {d.total === 0 ? (
                         <div className="h-[2px] bg-zinc-800 rounded w-full" />
                       ) : (
@@ -259,9 +277,9 @@ export default function DashboardOverview() {
                         </div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              )}
 
               {/* X-Axis Labels */}
               <div className="flex justify-between text-[8px] font-mono text-text-tertiary mt-2">
@@ -280,21 +298,26 @@ export default function DashboardOverview() {
                 <p className="text-[10px] text-text-tertiary mb-4">Average gas cost per day in ETH</p>
               </div>
 
-              <div className="flex items-end gap-[3px] h-[100px] justify-between border-b border-border pb-1">
-                {gasChartData.map((g, idx) => {
-                  const pct = maxGas > 0 ? (g.avg_gas / maxGas) * 100 : 0;
-                  return (
-                    <div key={g.date} className="group relative flex-1 flex flex-col justify-end h-full cursor-pointer">
-                      {/* Tooltip */}
-                      <div className="group-hover:block hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-zinc-950 border border-border text-[10px] text-text-primary px-2 py-1 rounded shadow-xl whitespace-nowrap z-20 font-mono">
-                        {new Date(g.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: {g.avg_gas.toFixed(6)} ETH
+              {gasChartData.every(g => g.avg_gas === 0) ? (
+                <div className="flex flex-col items-center justify-center h-[100px] border border-dashed border-border rounded-lg">
+                  <p className="text-[10px] text-text-tertiary text-center">Run a simulation to start seeing trends.</p>
+                  <Link href="/dashboard/simulate" className="text-[10px] text-coral hover:text-coral-hover mt-1">Run one now →</Link>
+                </div>
+              ) : (
+                <div className="flex items-end gap-[3px] h-[100px] justify-between border-b border-border pb-1">
+                  {gasChartData.map((g, idx) => {
+                    const pct = maxGas > 0 ? (g.avg_gas / maxGas) * 100 : 0;
+                    return (
+                      <div key={g.date} className="group relative flex-1 flex flex-col justify-end h-full cursor-pointer">
+                        <div className="group-hover:block hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-zinc-950 border border-border text-[10px] text-text-primary px-2 py-1 rounded shadow-xl whitespace-nowrap z-20 font-mono">
+                          {new Date(g.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: {g.avg_gas.toFixed(6)} ETH
+                        </div>
+                        <div className="bg-coral w-full rounded-t-sm" style={{ height: `${pct}%`, minHeight: g.avg_gas > 0 ? '2px' : '0px' }} />
                       </div>
-
-                      <div className="bg-coral w-full rounded-t-sm" style={{ height: `${pct}%`, minHeight: g.avg_gas > 0 ? '2px' : '0px' }} />
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* X-Axis Labels */}
               <div className="flex justify-between text-[8px] font-mono text-text-tertiary mt-2">
@@ -353,6 +376,53 @@ export default function DashboardOverview() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Recent Simulations */}
+        <div className="mb-8 rounded-xl border border-border bg-surface overflow-hidden">
+          <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-text-primary">Recent Simulations</h2>
+            <Link href="/dashboard/logs" className="text-xs text-coral hover:text-coral-hover transition-colors">View all →</Link>
+          </div>
+          {recentSims.length === 0 ? (
+            <div className="px-6 py-10 flex flex-col items-center text-center gap-2">
+              <p className="text-xs text-text-tertiary">No simulations yet.</p>
+              <Link href="/dashboard/simulate" className="text-xs text-coral hover:text-coral-hover transition-colors">Run your first one →</Link>
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {recentSims.map(sim => {
+                const approved = sim.status === 'APPROVED';
+                const gasEth = sim.telemetry?.gas_cost_eth;
+                const pnlUsd = sim.telemetry?.net_pnl_usd;
+                return (
+                  <Link
+                    key={sim.session_id}
+                    href={`/dashboard/simulate`}
+                    className="flex items-center gap-4 px-6 py-3.5 hover:bg-elevated transition-colors duration-150"
+                  >
+                    <span className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-mono font-semibold border ${
+                      approved
+                        ? 'bg-teal/10 border-teal/30 text-teal'
+                        : 'bg-danger/10 border-danger/30 text-danger'
+                    }`}>
+                      {sim.status}
+                    </span>
+                    <span className="text-xs font-mono text-text-secondary shrink-0 w-28 truncate">{sim.network}</span>
+                    <span className="text-xs font-mono text-text-tertiary shrink-0 w-28">
+                      {gasEth != null ? `${Number(gasEth).toFixed(6)} ETH` : '—'}
+                    </span>
+                    <span className={`text-xs font-mono shrink-0 w-24 ${
+                      pnlUsd == null ? 'text-text-tertiary' : Number(pnlUsd) >= 0 ? 'text-teal' : 'text-danger'
+                    }`}>
+                      {pnlUsd != null ? `${Number(pnlUsd) >= 0 ? '+' : ''}$${Number(pnlUsd).toFixed(2)}` : '—'}
+                    </span>
+                    <span className="flex-1 text-right text-[10px] font-mono text-text-tertiary">{timeAgo(sim.created_at)}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
