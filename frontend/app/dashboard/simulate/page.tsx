@@ -156,6 +156,23 @@ export default function DashboardPage() {
     setApiKey(stored.trim().replace(/[^\x20-\x7E]/g, ''));
   }, []);
 
+  // Show NPS survey 30s after first terminal simulation result this session
+  useEffect(() => {
+    if (result?.status !== 'APPROVED' && result?.status !== 'REJECTED') return;
+    if (sessionStorage.getItem('arbisim_survey_shown')) return;
+
+    const timer = setTimeout(() => {
+      posthog.getActiveMatchingSurveys((surveys) => {
+        const survey = surveys.find(s => s.name === 'ArbiSim Guard – Simulation usefulness NPS');
+        if (!survey) return;
+        sessionStorage.setItem('arbisim_survey_shown', '1');
+        posthog.renderSurvey(survey.id, '#arbisim-survey-container');
+      });
+    }, 30_000);
+
+    return () => clearTimeout(timer);
+  }, [result?.status]);
+
   const handleNetworkChange = useCallback((newNetwork: NetworkId) => {
     setNetwork(newNetwork);
     setPayload(JSON.stringify(EXAMPLE_PAYLOADS[newNetwork], null, 2));
@@ -434,6 +451,9 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* PostHog NPS survey renders here as a floating popup */}
+      <div id="arbisim-survey-container" className="fixed bottom-6 right-6 z-50" />
     </div>
   );
 }
