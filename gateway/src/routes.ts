@@ -380,18 +380,30 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
  */
 router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const result = await pgPool.query(`
-      SELECT
-        COUNT(*)                                                               AS total,
-        COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE)               AS today,
-        COUNT(*) FILTER (WHERE created_at >= date_trunc('month', now()))       AS month,
-        COUNT(*) FILTER (WHERE status = 'APPROVED'
-                           AND created_at >= date_trunc('month', now()))       AS approved,
-        COUNT(*) FILTER (WHERE status IN ('APPROVED','REJECTED')
-                           AND created_at >= date_trunc('month', now()))       AS terminal
-      FROM simulations
-    `);
-    const row = result.rows[0];
+    const [simResult, overviewResult] = await Promise.all([
+      pgPool.query(`
+        SELECT
+          COUNT(*)                                                               AS total,
+          COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE)               AS today,
+          COUNT(*) FILTER (WHERE created_at >= date_trunc('month', now()))       AS month,
+          COUNT(*) FILTER (WHERE status = 'APPROVED'
+                             AND created_at >= date_trunc('month', now()))       AS approved,
+          COUNT(*) FILTER (WHERE status IN ('APPROVED','REJECTED')
+                             AND created_at >= date_trunc('month', now()))       AS terminal
+        FROM simulations
+      `),
+      pgPool.query(`
+        SELECT
+          COUNT(DISTINCT owner_email)                                                         AS total_users,
+          (SELECT COUNT(DISTINCT user_address) FROM verified_payments)                        AS paid_users,
+          COALESCE((SELECT SUM(amount::numeric) FROM verified_payments), 0)                   AS revenue_usdc
+        FROM api_keys
+        WHERE revoked_at IS NULL
+      `),
+    ]);
+
+    const row = simResult.rows[0];
+    const ov  = overviewResult.rows[0];
     const terminal  = Number(row.terminal);
     const approved  = Number(row.approved);
     const approval_rate = terminal > 0 ? Math.round((approved / terminal) * 100) : null;
@@ -403,6 +415,9 @@ router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
       approval_rate,
       quota_used:    Number(row.month),
       quota_limit:   500,
+      total_users:   Number(ov.total_users),
+      paid_users:    Number(ov.paid_users),
+      revenue_usdc:  Number(ov.revenue_usdc).toFixed(2),
     });
   } catch (error) {
     console.error('Stats query failed:', error);

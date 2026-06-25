@@ -1,6 +1,11 @@
 import { Router, Request, Response } from 'express';
+import { PostHog } from 'posthog-node';
 import { isPaymentVerified, recordPayment } from '../db.js';
 import { config } from '../config.js';
+
+const phClient = process.env.POSTHOG_API_KEY
+  ? new PostHog(process.env.POSTHOG_API_KEY, { host: 'https://us.i.posthog.com' })
+  : null;
 
 const router = Router();
 
@@ -80,6 +85,12 @@ router.post('/nowpayments', async (req: Request, res: Response): Promise<void> =
       
       // 2. Record payment in database
       await recordPayment(paymentId, address, tier, payAmount);
+
+      phClient?.capture({
+        distinctId: address,
+        event: 'payment_completed',
+        properties: { tier, amount: payAmount, payment_id: paymentId },
+      });
 
       // 3. Sync upgraded tier to Cloudflare KV cache
       const workerUrl = (process.env.CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev').replace(/\/$/, '');
