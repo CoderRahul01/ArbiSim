@@ -1,9 +1,8 @@
 FROM ubuntu:22.04
 
-# Avoid tzdata interactive prompt
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Node.js, Python, pip, curl, build-essential, and git
+# 1. System deps
 RUN apt-get update && \
     apt-get install -y curl python3 python3-pip python3-venv git build-essential && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
@@ -11,35 +10,34 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Foundry (for Anvil)
+# 2. Foundry — installed before any COPY so this layer is cached across code changes
 RUN curl -L https://foundry.paradigm.xyz | bash
 ENV PATH="/root/.foundry/bin:${PATH}"
 RUN foundryup
 
-# Set working directory
-WORKDIR /app
-
-# Copy the entire project
-COPY . .
-
-# Build the Gateway (Node.js)
+# 3. Node deps — cached until gateway/package.json changes
 WORKDIR /app/gateway
+COPY gateway/package*.json ./
 RUN npm install
-RUN npm run build
 
-# Install Worker dependencies (Python)
+# 4. Python deps — cached until workers/requirements.txt changes
 WORKDIR /app/workers
+COPY workers/requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Create a startup script to run both processes
-# Express gateway uses Render's PORT env var; aiohttp worker uses PING_PORT (internal only)
+# 5. Copy full source (only this layer re-runs on code changes)
 WORKDIR /app
-RUN printf '#!/bin/bash\nset -e\necho "Starting Express Gateway on port ${PORT:-3001}..."\ncd /app/gateway && npm start &\necho "Starting Python Background Worker..."\ncd /app/workers && PING_PORT=8081 python3 src/main.py\n' > /app/start.sh
+COPY . .
 
-RUN chmod +x /app/start.sh
+# 6. Build gateway TypeScript
+WORKDIR /app/gateway
+RUN npm run build
 
-# Render routes external traffic to PORT; Express gateway must listen on it
+# 7. Startup: Express uses Render's PORT; aiohttp worker uses PING_PORT (internal only)
+WORKDIR /app
+RUN printf '#!/bin/bash\nset -e\ncd /app/gateway && npm start &\ncd /app/workers && python3 src/main.py\n' > /app/start.sh \
+    && chmod +x /app/start.sh
+
 EXPOSE 10000
 
-# Run both the gateway and the worker
 CMD ["/app/start.sh"]
