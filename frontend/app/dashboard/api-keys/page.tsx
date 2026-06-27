@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { posthog } from '@/lib/posthog';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -117,7 +118,7 @@ export default function ApiKeysPage() {
       const newKey = await res.json() as ApiKey;
       setJustCreated(newKey);
       setKeys(prev => [...prev, newKey]);
-      
+      posthog.capture('api_key_created', { tier: newKey.tier });
       try { localStorage.setItem('arbisim_api_key', (newKey.fullKey ?? '').trim().replace(/[^\x20-\x7E]/g, '')); } catch {}
       setShowModal(false);
     } catch (err) {

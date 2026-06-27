@@ -1,6 +1,11 @@
 import { Router, Request, Response } from 'express';
+import { PostHog } from 'posthog-node';
 import { isPaymentVerified, recordPayment, addCredits, getOrCreateUser } from '../db.js';
 import { config } from '../config.js';
+
+const phClient = process.env.POSTHOG_API_KEY
+  ? new PostHog(process.env.POSTHOG_API_KEY, { host: 'https://us.i.posthog.com' })
+  : null;
 
 const router = Router();
 
@@ -87,7 +92,6 @@ router.post('/nowpayments', async (req: Request, res: Response): Promise<void> =
         const payAmount = payment.pay_amount ? String(payment.pay_amount) : String(payment.price_amount || '0');
         await recordPayment(paymentId, creditAddress, `credit_${packId}`, payAmount);
 
-        // Add credits to user
         await getOrCreateUser(creditAddress);
         await addCredits(creditAddress, creditsToAdd, 'purchase', `Purchased ${packId} credit pack`, paymentId);
         console.log(`NOWPayments Webhook: Added ${creditsToAdd} credits to ${creditAddress}`);
@@ -99,11 +103,15 @@ router.post('/nowpayments', async (req: Request, res: Response): Promise<void> =
         console.log(`NOWPayments Webhook: Upgrade validated. Upgrading address: ${address} to tier: ${tier}`);
 
         const payAmount = payment.pay_amount ? String(payment.pay_amount) : String(payment.price_amount || '0');
-        
-        // 2. Record payment in database
+
         await recordPayment(paymentId, address, tier, payAmount);
 
-        // 3. Sync upgraded tier to Cloudflare KV cache
+        phClient?.capture({
+          distinctId: address,
+          event: 'payment_completed',
+          properties: { tier, amount: payAmount, payment_id: paymentId },
+        });
+
         const workerUrl = (process.env.CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev').replace(/\/$/, '');
         const adminKey = config.api.adminKey;
 

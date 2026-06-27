@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useAccount } from 'wagmi';
 import { SUPPORTED_NETWORKS } from '../../../lib/chains';
+import { posthog } from '@/lib/posthog';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -143,6 +144,7 @@ export default function BacktestPage() {
     setResult(null);
 
     try {
+      posthog.capture('backtest_submitted', { network });
       const res = await fetch(`${CF_WORKER_URL}/api/v1/backtest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': cleanKey },

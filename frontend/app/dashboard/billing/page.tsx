@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
+import { posthog } from '@/lib/posthog';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -12,6 +13,16 @@ const TIER_LIMITS: Record<string, { monthly: number; label: string }> = {
   enterprise: { monthly: 100000, label: 'Enterprise' },
 };
 
+function parseTierFromKey(key: string): string {
+  const match = key.match(/^ask_(free|builder|protocol|admin)_/);
+  return match ? match[1] : 'free';
+}
+
+function dbTierToUiTier(tier: string): string {
+  if (tier === 'builder') return 'pro';
+  if (tier === 'protocol') return 'enterprise';
+  return tier;
+}
 
 function useBillingStats() {
   const [quotaUsed, setQuotaUsed] = useState(0);
@@ -235,6 +246,7 @@ export default function BillingPage() {
     }
 
     setUpgrading(planKey);
+    posthog.capture('upgrade_clicked', { plan: planKey });
     setTxStatus({ type: 'signing', message: 'Creating checkout session...' });
 
     // pro -> builder, enterprise -> protocol

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
 import { headers } from 'next/headers';
 import { cookieToInitialState } from '@wagmi/core';
+import { Analytics } from '@vercel/analytics/react';
 import './globals.css';
 import Providers from './Providers';
 import { wagmiConfig } from '@/lib/wagmi/config';
@@ -64,6 +65,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     >
       <body style={{ fontFamily: 'var(--font-sans, system-ui, sans-serif)' }}>
         <Providers initialState={initialState}>{children}</Providers>
+        <Analytics />
       </body>
     </html>
   );

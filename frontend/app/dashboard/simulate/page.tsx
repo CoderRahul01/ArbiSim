@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { useAccount } from 'wagmi';
+import { posthog } from '@/lib/posthog';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
 
@@ -169,6 +170,7 @@ export default function DashboardPage() {
     setResult({ status: 'PENDING' });
 
     try {
+      posthog.capture('simulation_submitted', { network });
       const res = await fetch(`${CF_WORKER_URL}/api/v1/simulate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': cleanKey },

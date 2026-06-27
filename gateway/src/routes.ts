@@ -498,8 +498,20 @@ router.get('/stats', async (req: Request, res: Response): Promise<void> => {
       params.push(apiKeyId);
     }
 
-    const result = await pgPool.query(queryText, params);
+    const [result, overviewResult] = await Promise.all([
+      pgPool.query(queryText, params),
+      pgPool.query(`
+        SELECT
+          COUNT(DISTINCT owner_email)                                        AS total_users,
+          (SELECT COUNT(DISTINCT user_address) FROM verified_payments)       AS paid_users,
+          COALESCE((SELECT SUM(amount::numeric) FROM verified_payments), 0)  AS revenue_usdc
+        FROM api_keys
+        WHERE revoked_at IS NULL
+      `),
+    ]);
+
     const row = result.rows[0];
+    const ov  = overviewResult.rows[0];
     const terminal  = Number(row.terminal);
     const approved  = Number(row.approved);
     const approval_rate = terminal > 0 ? Math.round((approved / terminal) * 100) : null;
@@ -528,6 +540,9 @@ router.get('/stats', async (req: Request, res: Response): Promise<void> => {
       purchased_credits,
       earned_credits,
       total_credits,
+      total_users:   Number(ov.total_users),
+      paid_users:    Number(ov.paid_users),
+      revenue_usdc:  Number(ov.revenue_usdc).toFixed(2),
     });
   } catch (error) {
     console.error('Stats query failed:', error);

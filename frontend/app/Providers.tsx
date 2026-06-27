@@ -1,11 +1,12 @@
 'use client';
 
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useEffect } from 'react';
 import { wagmiConfig, wagmiAdapter, networks, projectId, metadata } from '@/lib/wagmi/config';
 import { createAppKit } from '@reown/appkit/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { State, WagmiProvider } from 'wagmi';
 import { createSIWEConfig, formatMessage } from '@reown/appkit-siwe';
+import { initPostHog, posthog } from '@/lib/posthog';
 
 const queryClient = new QueryClient();
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
@@ -57,6 +58,8 @@ const siweConfig = createSIWEConfig({
     if (res.ok) {
       const { token } = await res.json();
       localStorage.setItem('arbisim_jwt', token);
+      posthog.identify(address, { wallet_address: address });
+      posthog.capture('user_signed_in', { address });
       return true;
     }
     return false;
@@ -84,6 +87,8 @@ createAppKit({
 });
 
 export default function Providers({ children, initialState }: { children: ReactNode; initialState?: State }) {
+  useEffect(() => { initPostHog(); }, []);
+
   return (
     <WagmiProvider config={wagmiConfig as any} initialState={initialState}>
       <QueryClientProvider client={queryClient}>
