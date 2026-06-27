@@ -4,6 +4,27 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
+interface MarketStats {
+  arbitrumSwaps90d: number | null
+  avalancheSwaps90d: number | null
+  arbitrumVolume90d: number | null
+  avalancheVolume90d: number | null
+}
+
+function formatCount(n: number | null): string {
+  if (n === null) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
+  return n.toString()
+}
+
+function formatVolume(n: number | null): string {
+  if (n === null) return '—'
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(0)}M`
+  return `$${n.toFixed(0)}`
+}
+
 interface SimFlag {
   key: string;
   label: string;
@@ -17,7 +38,7 @@ function LiveTerminal() {
     { delay: 100,  text: '     -H "X-API-Key: ask_free_••••••••" \\',                           dim: true  },
     { delay: 200,  text: '     -d \'{"network":"arbitrum-one","agent_address":"0x...","transactions":[...]}\'' , dim: true },
     { delay: 800,  text: '',                                                                      dim: false },
-    { delay: 900,  text: '# Response — 340ms',                                                   dim: true  },
+    { delay: 900,  text: '# Response - 340ms',                                                   dim: true  },
     { delay: 1000, text: '{',                                                                     dim: false },
     { delay: 1100, text: '  "status": "REJECTED",',                                              dim: false },
     { delay: 1200, text: '  "flags": {',                                                          dim: false },
@@ -27,7 +48,7 @@ function LiveTerminal() {
     { delay: 1600, text: '    "timeboost_recommended": true',                                     dim: false },
     { delay: 1700, text: '  },',                                                                  dim: false },
     { delay: 1800, text: '  "gas": { "l2_gas_used": 185420, "l1_buffer": 12800, "total_wei": "213000000000000" },', dim: false },
-    { delay: 1900, text: '  "verdict": "ABORT — capital at risk"',                               dim: false },
+    { delay: 1900, text: '  "verdict": "ABORT - capital at risk"',                               dim: false },
     { delay: 2000, text: '}',                                                                     dim: false },
   ];
 
@@ -56,7 +77,7 @@ function LiveTerminal() {
         <div className="w-3 h-3 rounded-full bg-red-500 opacity-80" />
         <div className="w-3 h-3 rounded-full bg-amber opacity-80" />
         <div className="w-3 h-3 rounded-full bg-green-500 opacity-80" />
-        <span className="ml-3 text-text-tertiary text-xs">arbisim — simulation output</span>
+        <span className="ml-3 text-text-tertiary text-xs">arbisim - simulation output</span>
       </div>
       <div className="p-5 space-y-1">
         {lines.slice(0, visibleCount).map((line, i) => (
@@ -95,23 +116,37 @@ function FlagGrid() {
     { key: 'x402_payment_risk',     label: 'x402 payment risk',      description: 'ERC-20 transfer to low-reputation payee. Abort before paying.', status: 'danger'  },
   ];
 
+  const glyphs: Record<string, React.ReactNode> = {
+    execution_reverted:    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,
+    high_slippage:         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
+    sandwich_detected:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="8" y="14" width="8" height="7" rx="1"/><line x1="6.5" y1="10" x2="12" y2="14"/><line x1="17.5" y1="10" x2="12" y2="14"/></svg>,
+    unsafe_allowance:      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+    sig_failed:            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><line x1="12" y1="15" x2="12" y2="18"/></svg>,
+    valid_until_expired:   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+    timeboost_recommended: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+    stylus_ink_overflow:   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>,
+    low_agent_reputation:  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>,
+    x402_payment_risk:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
+  };
+
   const colors = {
-    danger:  { bg: 'bg-red-950/40',    border: 'border-red-800/30',    dot: 'bg-red-500',  text: 'text-red-300'    },
-    warning: { bg: 'bg-amber-950/40',  border: 'border-amber-800/30',  dot: 'bg-amber',    text: 'text-amber-300'  },
-    safe:    { bg: 'bg-teal-950/40',   border: 'border-teal-800/30',   dot: 'bg-teal',     text: 'text-teal-300'   },
+    danger:  { bg: 'bg-red-950/40',    border: 'border-red-800/30',    icon: 'text-red-400',  text: 'text-red-300'    },
+    warning: { bg: 'bg-amber-950/40',  border: 'border-amber-800/30',  icon: 'text-amber-400', text: 'text-amber-300'  },
+    safe:    { bg: 'bg-teal-950/40',   border: 'border-teal-800/30',   icon: 'text-teal-400', text: 'text-teal-300'   },
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
       {flags.map(flag => {
         const c = colors[flag.status];
         return (
-          <div key={flag.key} className={`rounded-lg border p-4 ${c.bg} ${c.border} transition-all duration-200 hover:scale-[1.02] hover:brightness-110`}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`w-2 h-2 rounded-full ${c.dot} animate-pulse-dot`} />
-              <span className={`text-xs font-mono font-medium ${c.text}`}>{flag.key}</span>
+          <div key={flag.key} className={`rounded-lg border p-4 ${c.bg} ${c.border} transition-all duration-200 hover:scale-[1.02] hover:brightness-110 group`}>
+            <div className="flex items-center gap-2.5 mb-2">
+              <div className={`${c.icon} opacity-80 group-hover:opacity-100 transition-opacity`}>
+                {glyphs[flag.key]}
+              </div>
+              <span className={`text-xs font-mono font-medium ${c.text}`}>{flag.label}</span>
             </div>
-            <p className="text-sm font-medium text-text-primary mb-1">{flag.label}</p>
             <p className="text-xs text-text-tertiary leading-relaxed">{flag.description}</p>
           </div>
         );
@@ -170,6 +205,14 @@ export default function HomePage() {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [marketStats, setMarketStats] = useState<MarketStats | null>(null);
+
+  useEffect(() => {
+    fetch('/api/market-stats')
+      .then(r => r.json())
+      .then(setMarketStats)
+      .catch(() => {/* silently degrade */});
+  }, []);
 
   async function handleWaitlist(e: React.FormEvent) {
     e.preventDefault();
@@ -215,15 +258,18 @@ export default function HomePage() {
               <span className="text-coral italic">transact.</span>
             </h1>
             <p className="text-xs font-mono text-text-tertiary mb-6 tracking-wide">
-              ArbiSim — Arbitrary Simulation. Not one chain. All chains.
+              Pre-execution safety layer for AI agents on EVM chains
             </p>
             <p className="text-lg text-text-secondary leading-relaxed mb-4 max-w-md">
-              ArbiSim Guard gives AI agents a pre-flight safety check.
-              Simulate any DeFi transaction in an isolated fork —
+              ArbiSim Guard gives AI agents a pre-execution safety check.
+              Simulate any DeFi transaction in an isolated fork -
               catch reverts, slippage, MEV, and agent reputation risk before a single wei leaves your wallet.
             </p>
+            <p className="text-xs font-mono text-text-tertiary mb-6">
+              Live on Arbitrum and Avalanche. Base, BNB, and Polygon coming soon.
+            </p>
             <div className="flex flex-wrap gap-1.5 mb-8">
-              {['Arbitrum One', 'Arbitrum Sepolia', 'Avalanche C-Chain', 'Fuji Testnet'].map(chain => (
+              {['Arbitrum One', 'Arbitrum Sepolia', 'Avalanche C-Chain', 'Avalanche Fuji'].map(chain => (
                 <span key={chain} className="text-xs font-mono px-2.5 py-1 rounded-full border border-border bg-surface text-text-tertiary">
                   {chain}
                 </span>
@@ -251,6 +297,48 @@ export default function HomePage() {
                 </div>
               ))}
             </div>
+
+            {/* Live Dune market stats — 1h cached */}
+            <div className="mt-6 rounded-lg border border-border bg-surface/60 px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 items-center">
+              <span className="flex items-center gap-1.5 text-xs font-mono text-text-tertiary">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal animate-pulse-dot" />
+                live market data
+              </span>
+              <div className="flex flex-wrap gap-x-6 gap-y-1">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-sm font-mono font-semibold text-text-primary">
+                    {formatCount(marketStats?.arbitrumSwaps90d ?? null)}
+                  </span>
+                  <span className="text-xs text-text-tertiary">Arbitrum swaps / 90d</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-sm font-mono font-semibold text-text-primary">
+                    {formatVolume(marketStats?.arbitrumVolume90d ?? null)}
+                  </span>
+                  <span className="text-xs text-text-tertiary">Arbitrum volume</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-sm font-mono font-semibold text-text-primary">
+                    {formatCount(marketStats?.avalancheSwaps90d ?? null)}
+                  </span>
+                  <span className="text-xs text-text-tertiary">Avalanche swaps / 90d</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-sm font-mono font-semibold text-text-primary">
+                    {formatVolume(marketStats?.avalancheVolume90d ?? null)}
+                  </span>
+                  <span className="text-xs text-text-tertiary">Avalanche volume</span>
+                </div>
+              </div>
+              <a
+                href="https://dune.com/arbisim/arbisim-guard-safety-intelligence-dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-auto text-xs font-mono text-text-tertiary hover:text-coral transition-colors"
+              >
+                Dune ↗
+              </a>
+            </div>
           </div>
           <div className="animate-fade-in" style={{ animationDelay: '200ms' }}>
             <LiveTerminal />
@@ -258,27 +346,120 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* HOW IT WORKS */}
+      {/* HOW IT WORKS - Geometric Flow Diagram */}
       <section id="how-it-works" className="border-t border-border py-20">
         <div className="max-w-6xl mx-auto px-6">
           <h2 className="font-serif text-h1 text-text-primary mb-3">How it works</h2>
           <p className="text-text-secondary mb-12">Three steps. One API call. Zero capital at risk.</p>
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              { step: '01', title: 'Fork', accent: 'coral', description: 'ArbiSim Guard spawns an ephemeral Anvil fork of any supported chain at the current block. Your transaction executes against the exact live state — real liquidity, real prices, real protocols.' },
-              { step: '02', title: 'Analyse', accent: 'amber', description: 'The analytical engine parses execution traces, computes chain-specific gas, detects Stylus WASM contracts, validates ERC-4337 UserOps, checks ERC-8004 agent reputation, and scores MEV risk.' },
-              { step: '03', title: 'Decide', accent: 'teal', description: 'You receive an APPROVED or REJECTED verdict with a structured safety flag object, full gas breakdown, Timeboost recommendation, and the exact revert reason if applicable.' },
-            ].map(item => (
-              <div key={item.step} className="rounded-xl border border-border bg-surface p-6 transition-all duration-300 hover:border-zinc-600 hover:bg-elevated">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-4 text-sm font-mono font-semibold ${
-                  item.accent === 'coral' ? 'bg-coral/10 text-coral border border-coral/20' :
-                  item.accent === 'amber' ? 'bg-amber/10 text-amber border border-amber/20' :
-                  'bg-teal/10 text-teal border border-teal/20'
-                }`}>{item.step}</div>
-                <h3 className="text-lg font-semibold text-text-primary mb-3">{item.title}</h3>
-                <p className="text-sm text-text-secondary leading-relaxed">{item.description}</p>
-              </div>
-            ))}
+          
+          {/* Flow diagram */}
+          <div className="relative">
+            {/* Connection lines (desktop only) */}
+            <div className="hidden md:block absolute top-1/2 left-0 right-0 -translate-y-1/2" style={{ zIndex: 0 }}>
+              <svg width="100%" height="60" viewBox="0 0 1200 60" fill="none" preserveAspectRatio="none">
+                <path d="M200 30 L500 30" stroke="url(#grad1)" strokeWidth="2" strokeDasharray="6 4" opacity="0.4"/>
+                <path d="M700 30 L1000 30" stroke="url(#grad2)" strokeWidth="2" strokeDasharray="6 4" opacity="0.4"/>
+                <defs>
+                  <linearGradient id="grad1" x1="200" y1="30" x2="500" y2="30" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#FF7849" />
+                    <stop offset="1" stopColor="#F59E0B" />
+                  </linearGradient>
+                  <linearGradient id="grad2" x1="700" y1="30" x2="1000" y2="30" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#F59E0B" />
+                    <stop offset="1" stopColor="#14B8A6" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-6 relative" style={{ zIndex: 1 }}>
+              {[
+                { step: '01', title: 'Fork', accent: 'coral',
+                  icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v1a2 2 0 01-2 2H8a2 2 0 01-2-2V9"/><line x1="12" y1="12" x2="12" y2="15"/></svg>,
+                  description: 'ArbiSim Guard spawns an ephemeral Anvil fork of any supported chain at the current block. Your transaction executes against the exact live state - real liquidity, real prices, real protocols.' },
+                { step: '02', title: 'Analyse', accent: 'amber',
+                  icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>,
+                  description: 'The analytical engine parses execution traces, computes chain-specific gas, detects Stylus WASM contracts, validates ERC-4337 UserOps, checks ERC-8004 agent reputation, and scores MEV risk.' },
+                { step: '03', title: 'Decide', accent: 'teal',
+                  icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+                  description: 'You receive an APPROVED or REJECTED verdict with a structured safety flag object, full gas breakdown, Timeboost recommendation, and the exact revert reason if applicable.' },
+              ].map(item => (
+                <div key={item.step} className={`rounded-xl border bg-surface p-6 transition-all duration-300 hover:brightness-110 relative group ${
+                  item.accent === 'coral' ? 'border-coral/20 hover:border-coral/40' :
+                  item.accent === 'amber' ? 'border-amber/20 hover:border-amber/40' :
+                  'border-teal/20 hover:border-teal/40'
+                }`}>
+                  {/* Step circle */}
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110 ${
+                    item.accent === 'coral' ? 'bg-coral/10 text-coral border border-coral/20' :
+                    item.accent === 'amber' ? 'bg-amber/10 text-amber border border-amber/20' :
+                    'bg-teal/10 text-teal border border-teal/20'
+                  }`}>
+                    {item.icon}
+                  </div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`text-xs font-mono opacity-50 ${
+                      item.accent === 'coral' ? 'text-coral' :
+                      item.accent === 'amber' ? 'text-amber' :
+                      'text-teal'
+                    }`}>{item.step}</span>
+                    <h3 className="text-lg font-semibold text-text-primary">{item.title}</h3>
+                  </div>
+                  <p className="text-sm text-text-secondary leading-relaxed">{item.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* COMPETITIVE COMPARISON */}
+      <section className="border-t border-border py-20">
+        <div className="max-w-6xl mx-auto px-6">
+          <h2 className="font-serif text-h1 text-text-primary mb-3">Why ArbiSim Guard?</h2>
+          <p className="text-text-secondary mb-12">Purpose-built for AI agent safety. Not a general-purpose simulator.</p>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-elevated border-b border-border">
+                  <th className="px-5 py-3.5 text-left text-xs font-mono text-text-tertiary uppercase tracking-wider">Feature</th>
+                  <th className="px-5 py-3.5 text-center text-xs font-mono text-coral uppercase tracking-wider">ArbiSim Guard</th>
+                  <th className="px-5 py-3.5 text-center text-xs font-mono text-text-tertiary uppercase tracking-wider">Tenderly</th>
+                  <th className="px-5 py-3.5 text-center text-xs font-mono text-text-tertiary uppercase tracking-wider">Blowfish</th>
+                  <th className="px-5 py-3.5 text-center text-xs font-mono text-text-tertiary uppercase tracking-wider">Manual Testing</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {[
+                  { feature: 'AI agent-native (MCP tool)',  arbisim: true,  tenderly: false, blowfish: false, manual: false },
+                  { feature: 'ERC-4337 UserOp validation',  arbisim: true,  tenderly: false, blowfish: true,  manual: false },
+                  { feature: 'MEV sandwich detection',       arbisim: true,  tenderly: false, blowfish: true,  manual: false },
+                  { feature: 'Timeboost premium calc',       arbisim: true,  tenderly: false, blowfish: false, manual: false },
+                  { feature: 'ERC-8004 agent reputation',    arbisim: true,  tenderly: false, blowfish: false, manual: false },
+                  { feature: 'Stylus WASM ink tracking',     arbisim: true,  tenderly: false, blowfish: false, manual: false },
+                  { feature: 'Multi-chain (Arb + Avax)',     arbisim: true,  tenderly: true,  blowfish: true,  manual: true  },
+                  { feature: 'Sub-400ms latency',            arbisim: true,  tenderly: false, blowfish: true,  manual: false },
+                  { feature: 'Free tier',                    arbisim: true,  tenderly: true,  blowfish: false, manual: true  },
+                ].map(row => (
+                  <tr key={row.feature} className="hover:bg-elevated/50 transition-colors">
+                    <td className="px-5 py-3 text-text-primary font-medium">{row.feature}</td>
+                    {[row.arbisim, row.tenderly, row.blowfish, row.manual].map((val, i) => (
+                      <td key={i} className="px-5 py-3 text-center">
+                        {val ? (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-teal/10 text-teal">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800/50 text-zinc-500">
+                            <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><line x1="4" y1="8" x2="12" y2="8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                          </span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -292,7 +473,7 @@ export default function HomePage() {
           <h2 className="font-serif text-h1 text-text-primary mb-3">Native MCP tool. Zero REST required.</h2>
           <p className="text-text-secondary mb-12 max-w-xl">
             Call <code className="font-mono text-coral text-sm">preflight_simulate</code> or <code className="font-mono text-coral text-sm">x402_preflight</code> directly from any MCP-compatible agent framework.
-            Your agent gets a structured APPROVED/REJECTED verdict with reputation flags — no HTTP wiring needed.
+            Your agent gets a structured APPROVED/REJECTED verdict with reputation flags - no HTTP wiring needed.
           </p>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="rounded-xl border border-border bg-surface p-6">
@@ -333,7 +514,7 @@ x402_preflight({
     "low_agent_reputation": true,  // score 12/100
     "x402_payment_risk": true
   },
-  "verdict": "ABORT — payee not trusted"
+  "verdict": "ABORT - payee not trusted"
 }`}
               </pre>
             </div>

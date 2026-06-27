@@ -2,19 +2,10 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import ShareButton from './ShareButton';
+import ViewTracker from './ViewTracker';
+import { SUPPORTED_NETWORKS } from '../../../lib/chains';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
-
-// ── Chain helpers ──────────────────────────────────────────────────────────
-
-// Block explorer address-lookup URLs per network
-const EXPLORER_ADDRESS_URL: Record<string, string> = {
-  'arbitrum-one':            'https://arbiscan.io/address/',
-  'arbitrum-sepolia':        'https://sepolia.arbiscan.io/address/',
-  'avalanche-mainnet':       'https://snowscan.xyz/address/',
-  'avalanche-fuji':          'https://testnet.snowscan.xyz/address/',
-  'robinhood-chain-testnet': '',
-};
 
 // Registry addresses per network (server-side env vars, safe in Server Components)
 const REGISTRY_BY_NETWORK: Record<string, string> = {
@@ -25,17 +16,21 @@ const REGISTRY_BY_NETWORK: Record<string, string> = {
 };
 
 function explorerUrl(network: string, address: string): string {
-  const base = EXPLORER_ADDRESS_URL[network] ?? '';
-  return base ? `${base}${address}` : '';
+  const chain = SUPPORTED_NETWORKS[network];
+  const base = chain?.blockExplorer ?? '';
+  return base ? `${base}/address/${address}` : '';
 }
 
 function explorerLabel(network: string): string {
-  if (network.startsWith('avalanche')) return 'Snowscan';
-  return network.includes('sepolia') ? 'Arbiscan Sepolia' : 'Arbiscan';
+  const chain = SUPPORTED_NETWORKS[network];
+  if (chain?.displayName?.includes('Avalanche')) return 'Snowscan';
+  if (chain?.displayName?.includes('Sepolia')) return 'Arbiscan Sepolia';
+  return 'Arbiscan';
 }
 
 function nativeToken(network: string): string {
-  return network?.startsWith('avalanche') ? 'AVAX' : 'ETH';
+  const chain = SUPPORTED_NETWORKS[network];
+  return chain?.nativeToken ?? 'ETH';
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -68,6 +63,9 @@ interface PublicSimResult {
   flags: Record<string, boolean> | null;
   gasBreakdown?: GasBreakdown;
   timeboost?: TimeboostData;
+  topOpcodes?: Array<{ op: string; gas: number }>;
+  balanceTraces?: Array<any>;
+  tokenTransfers?: Array<any>;
 }
 
 // ── Metadata ────────────────────────────────────────────────────────────────
@@ -78,10 +76,10 @@ export async function generateMetadata(
   const { sessionId } = await params;
   const short = sessionId.slice(0, 8);
   return {
-    title: `Simulation ${short}… — ArbiSim Guard`,
-    description: 'Pre-flight EVM simulation result — ArbiSim Guard',
+    title: `Simulation ${short}... - ArbiSim Guard`,
+    description: 'Pre-flight EVM simulation result - ArbiSim Guard',
     openGraph: {
-      title: 'Simulation result — ArbiSim Guard',
+      title: 'Simulation result - ArbiSim Guard',
       description: 'View this transaction pre-flight simulation result',
     },
   };
@@ -94,6 +92,19 @@ const DANGEROUS_FLAGS = new Set([
   'valid_until_expired', 'stylus_ink_overflow',
   'low_agent_reputation', 'x402_payment_risk',
 ]);
+
+const FLAG_ICONS: Record<string, React.ReactNode> = {
+  execution_reverted:    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,
+  high_slippage:         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
+  sandwich_detected:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="8" y="14" width="8" height="7" rx="1"/><line x1="6.5" y1="10" x2="12" y2="14"/><line x1="17.5" y1="10" x2="12" y2="14"/></svg>,
+  unsafe_allowance:      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+  sig_failed:            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><line x1="12" y1="15" x2="12" y2="18"/></svg>,
+  valid_until_expired:   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+  timeboost_recommended: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+  stylus_ink_overflow:   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>,
+  low_agent_reputation:  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>,
+  x402_payment_risk:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="12" x2="12" y2="23"/><line x1="12" y1="1" x2="12" y2="7"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
+};
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -111,15 +122,29 @@ function StatusBadge({ status }: { status: string }) {
 function FlagRow({ flagKey, value }: { flagKey: string; value: boolean }) {
   const isDangerous = DANGEROUS_FLAGS.has(flagKey) && value;
   const isWarning   = !DANGEROUS_FLAGS.has(flagKey) && value;
+  const icon = FLAG_ICONS[flagKey] ?? (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="16" x2="12" y2="12"/>
+      <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+  );
+  const label = flagKey.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
   return (
     <div className={`flex items-center justify-between px-4 py-2.5 rounded-md border transition-colors ${
-      isDangerous ? 'border-red-800/30 bg-red-950/20' :
-      isWarning   ? 'border-amber-800/30 bg-amber-950/20' :
-      'border-border bg-surface'
+      isDangerous ? 'border-red-800/30 bg-red-950/20 text-red-200' :
+      isWarning   ? 'border-amber-800/30 bg-amber-950/20 text-amber-200' :
+      'border-zinc-800/40 bg-zinc-900/10 text-zinc-300'
     }`}>
-      <span className="font-mono text-sm text-text-secondary">{flagKey}</span>
-      <span className={`text-sm font-medium ${value ? (isDangerous ? 'text-red-400' : 'text-amber-400') : 'text-teal'}`}>
-        {value ? 'true' : 'false'}
+      <div className="flex items-center gap-2.5">
+        <span className={isDangerous ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-zinc-500'}>
+          {icon}
+        </span>
+        <span className="font-mono text-sm">{label}</span>
+      </div>
+      <span className={`text-xs font-mono px-2 py-0.5 rounded ${value ? (isDangerous ? 'bg-red-900/40 text-red-300' : 'bg-amber-900/40 text-amber-300') : 'bg-teal-950/40 text-teal-300'}`}>
+        {value ? 'Risk Detected' : 'Safe'}
       </span>
     </div>
   );
@@ -135,10 +160,10 @@ function GasBreakdownPanel({ breakdown, network }: { breakdown: GasBreakdown; ne
   const hasL1Fee = breakdown.l1_gas_buffer != null && breakdown.l1_gas_buffer > 0;
 
   const rows: Array<{ label: string; value: string }> = [
-    { label: 'Gas used',        value: breakdown.l2_gas_used?.toLocaleString() ?? '—' },
+    { label: 'Gas used',        value: breakdown.l2_gas_used?.toLocaleString() ?? '-' },
     ...(hasL1Fee ? [{ label: 'L1 buffer', value: breakdown.l1_gas_buffer!.toLocaleString() }] : []),
     { label: 'Host I/O penalty', value: breakdown.host_io_penalty_gas?.toLocaleString() ?? '0' },
-    { label: 'Total fees',       value: totalFormatted ? `${totalFormatted} ${token}` : '—' },
+    { label: 'Total fees',       value: totalFormatted ? `${totalFormatted} ${token}` : '-' },
   ];
 
   return (
@@ -204,6 +229,7 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
           </div>
         ) : sim ? (
           <div className="space-y-6 animate-fade-in">
+            <ViewTracker sessionId={sessionId} />
             {/* Header card */}
             <div className="rounded-xl border border-border bg-surface p-6">
               <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -229,10 +255,10 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
             {/* Stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                { label: `Gas cost (${nativeToken(sim.network)})`, value: sim.gasCostEth ? `${sim.gasCostEth}` : '—' },
-                { label: 'Slippage',                               value: sim.slippagePercent != null ? `${sim.slippagePercent.toFixed(2)}%` : '—' },
-                { label: 'Net P&L',                                value: sim.netPnlUsd ?? '—' },
-                { label: 'Stylus ink',                             value: sim.stylusInkConsumed != null ? sim.stylusInkConsumed.toLocaleString() : '—' },
+                { label: `Gas cost (${nativeToken(sim.network)})`, value: sim.gasCostEth ? `${sim.gasCostEth}` : '-' },
+                { label: 'Slippage',                               value: sim.slippagePercent != null ? `${sim.slippagePercent.toFixed(2)}%` : '-' },
+                { label: 'Net P&L',                                value: sim.netPnlUsd ?? '-' },
+                { label: 'Stylus ink',                             value: sim.stylusInkConsumed != null ? sim.stylusInkConsumed.toLocaleString() : '-' },
               ].map(s => (
                 <div key={s.label} className="rounded-lg border border-border bg-surface px-4 py-3">
                   <p className="text-xs text-text-tertiary font-mono uppercase tracking-wider mb-1">{s.label}</p>
@@ -260,6 +286,98 @@ export default async function PublicSimPage({ params }: { params: Promise<{ sess
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {Object.entries(sim.flags).map(([k, v]) => <FlagRow key={k} flagKey={k} value={v} />)}
                 </div>
+              </div>
+            )}
+
+            {/* Top Opcodes trace */}
+            {sim.topOpcodes && sim.topOpcodes.length > 0 && (
+              <div className="rounded-xl border border-border bg-surface p-6">
+                <details className="group">
+                  <summary className="flex items-center justify-between cursor-pointer list-none">
+                    <h3 className="text-xs font-mono text-text-tertiary uppercase tracking-widest select-none">
+                      Gas Consumption by Opcode (Top 10)
+                    </h3>
+                    <span className="text-text-tertiary transition-transform group-open:rotate-180">
+                      ▼
+                    </span>
+                  </summary>
+                  <div className="mt-4 space-y-2">
+                    <div className="grid grid-cols-2 text-xs font-mono text-text-tertiary border-b border-border pb-1.5 mb-1.5">
+                      <div>Opcode</div>
+                      <div className="text-right">Gas Cost</div>
+                    </div>
+                    {sim.topOpcodes.map((item, idx) => (
+                      <div key={idx} className="grid grid-cols-2 text-sm font-mono py-1 border-b border-border/40 last:border-0">
+                        <div className="text-text-primary">{item.op}</div>
+                        <div className="text-right text-text-secondary">{item.gas.toLocaleString()}</div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            )}
+
+            {/* Token Transfers */}
+            {sim.tokenTransfers && sim.tokenTransfers.length > 0 && (
+              <div className="rounded-xl border border-border bg-surface p-6">
+                <details className="group">
+                  <summary className="flex items-center justify-between cursor-pointer list-none">
+                    <h3 className="text-xs font-mono text-text-tertiary uppercase tracking-widest select-none">
+                      Token Transfers ({sim.tokenTransfers.length})
+                    </h3>
+                    <span className="text-text-tertiary transition-transform group-open:rotate-180">
+                      ▼
+                    </span>
+                  </summary>
+                  <div className="mt-4 space-y-2">
+                    {sim.tokenTransfers.map((tx: any, idx: number) => (
+                      <div key={idx} className="text-sm font-mono py-2 border-b border-border/40 last:border-0 flex flex-wrap justify-between items-center gap-2">
+                        <div>
+                          <span className="text-coral font-medium">{tx.symbol ?? 'Token'}</span>{' '}
+                          <span className="text-text-secondary">{(Number(tx.amount) / Math.pow(10, tx.decimals ?? 18)).toLocaleString()}</span>
+                        </div>
+                        <div className="text-xs text-text-tertiary">
+                          From <span className="text-text-secondary">{tx.from?.slice(0, 6)}...{tx.from?.slice(-4)}</span> to{' '}
+                          <span className="text-text-secondary">{tx.to?.slice(0, 6)}...{tx.to?.slice(-4)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            )}
+
+            {/* Balance Changes */}
+            {sim.balanceTraces && sim.balanceTraces.length > 0 && (
+              <div className="rounded-xl border border-border bg-surface p-6">
+                <details className="group">
+                  <summary className="flex items-center justify-between cursor-pointer list-none">
+                    <h3 className="text-xs font-mono text-text-tertiary uppercase tracking-widest select-none">
+                      Balance Changes ({sim.balanceTraces.length})
+                    </h3>
+                    <span className="text-text-tertiary transition-transform group-open:rotate-180">
+                      ▼
+                    </span>
+                  </summary>
+                  <div className="mt-4 space-y-2">
+                    {sim.balanceTraces.map((trace: any, idx: number) => {
+                      const before = Number(trace.before ?? 0) / 1e18;
+                      const after = Number(trace.after ?? 0) / 1e18;
+                      const diff = after - before;
+                      const diffFormatted = diff >= 0 ? `+${diff.toFixed(6)}` : diff.toFixed(6);
+                      return (
+                        <div key={idx} className="text-sm font-mono py-2 border-b border-border/40 last:border-0 flex flex-wrap justify-between items-center gap-2">
+                          <div className="truncate max-w-[200px] sm:max-w-xs text-text-primary" title={trace.address}>
+                            {trace.address.slice(0, 6)}...{trace.address.slice(-4)}
+                          </div>
+                          <div className={`font-medium ${diff >= 0 ? 'text-teal' : 'text-red-400'}`}>
+                            {diffFormatted} {nativeToken(sim!.network)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
               </div>
             )}
 

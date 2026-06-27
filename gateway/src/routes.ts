@@ -1,7 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { ethers } from 'ethers';
-import { getSimulation, getMongoDb, updateSimulationStatusAndTelemetry, pgPool, listSimulations } from './db.js';
+import crypto from 'crypto';
+import {
+  getSimulation, getMongoDb, updateSimulationStatusAndTelemetry, pgPool, listSimulations,
+  getOrCreateUser, getUserCredits, deductCredit,
+  checkAndAwardSimulationRewards, recordSimView, createReferralCode, redeemReferralCode
+} from './db.js';
 import { submitSimulationJob } from './queue.js';
 import { MCP_TOOLS, callMcpTool } from './mcp-tools.js';
 import { VALID_NETWORKS } from './chain-config.js';
@@ -168,6 +173,45 @@ router.post('/simulate', async (req: Request, res: Response): Promise<void> => {
 
   try {
     const sessionId = uuidv4();
+    const ownerAddress = ((req as any).ownerId || req.headers['x-arbisim-owner'] || '').toLowerCase();
+
+    if (ownerAddress) {
+      const tier = (req as any).tier || 'free';
+      const limit = tier === 'pro' ? 10000 : tier === 'enterprise' ? 100000 : 500;
+
+      const usageRes = await pgPool.query(
+        `SELECT COUNT(*)::integer as count 
+         FROM simulations 
+         WHERE owner_address = $1 AND created_at >= date_trunc('month', now())`,
+        [ownerAddress]
+      );
+      const currentMonthUsage = usageRes.rows[0]?.count ?? 0;
+
+      if (currentMonthUsage >= limit) {
+        // Exceeded tier limit, check credits
+        const credits = await getUserCredits(ownerAddress);
+        if (credits <= 0) {
+          res.status(403).json({
+            error: {
+              code: 'QUOTA_EXCEEDED',
+              message: `Monthly simulation limit of ${limit} reached, and prepaid credit balance is 0. Please purchase credits in the billing tab to continue.`
+            }
+          });
+          return;
+        }
+
+        const deduction = await deductCredit(ownerAddress, 1, `Simulation: ${sessionId}`);
+        if (!deduction.success) {
+          res.status(403).json({
+            error: {
+              code: 'QUOTA_EXCEEDED',
+              message: 'Failed to deduct simulation credit. Please check your credit balance.'
+            }
+          });
+          return;
+        }
+      }
+    }
     
     // Package payload for queue
     const queuePayload = isUserOp ? {
@@ -193,7 +237,8 @@ router.post('/simulate', async (req: Request, res: Response): Promise<void> => {
       agent_address,
       isUserOp ? [] : transactions,
       max_slippage_tolerance,
-      apiKeyId
+      apiKeyId,
+      ownerAddress || null
     );
 
     // Update the PostgreSQL queue row with the full payload (ensures UserOp fields are present)
@@ -268,8 +313,48 @@ router.post('/simulate/x402', async (req: Request, res: Response): Promise<void>
   };
 
   try {
+    const ownerAddress = ((req as any).ownerId || req.headers['x-arbisim-owner'] || '').toLowerCase();
+
+    if (ownerAddress) {
+      const tier = (req as any).tier || 'free';
+      const limit = tier === 'pro' ? 10000 : tier === 'enterprise' ? 100000 : 500;
+
+      const usageRes = await pgPool.query(
+        `SELECT COUNT(*)::integer as count 
+         FROM simulations 
+         WHERE owner_address = $1 AND created_at >= date_trunc('month', now())`,
+        [ownerAddress]
+      );
+      const currentMonthUsage = usageRes.rows[0]?.count ?? 0;
+
+      if (currentMonthUsage >= limit) {
+        // Exceeded tier limit, check credits
+        const credits = await getUserCredits(ownerAddress);
+        if (credits <= 0) {
+          res.status(403).json({
+            error: {
+              code: 'QUOTA_EXCEEDED',
+              message: `Monthly simulation limit of ${limit} reached, and prepaid credit balance is 0. Please purchase credits in the billing tab to continue.`
+            }
+          });
+          return;
+        }
+
+        const deduction = await deductCredit(ownerAddress, 1, `Simulation x402: ${sessionId}`);
+        if (!deduction.success) {
+          res.status(403).json({
+            error: {
+              code: 'QUOTA_EXCEEDED',
+              message: 'Failed to deduct simulation credit. Please check your credit balance.'
+            }
+          });
+          return;
+        }
+      }
+    }
+
     const apiKeyId = (req as any).apiKeyId ?? null;
-    await submitSimulationJob(sessionId, network, from_address, transactions, 0, apiKeyId);
+    await submitSimulationJob(sessionId, network, from_address, transactions, 0, apiKeyId, ownerAddress || null);
     await pgPool.query(
       `UPDATE simulation_queue SET payload = $1 WHERE session_id = $2`,
       [JSON.stringify(queuePayload), sessionId]
@@ -304,6 +389,16 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
     if (!pgRecord) {
       res.status(404).json({ error: `Simulation session ${session_id} not found.` });
       return;
+    }
+
+    if ((pgRecord.status === 'APPROVED' || pgRecord.status === 'REJECTED') && !pgRecord.rewards_processed && pgRecord.owner_address) {
+      await pgPool.query(
+        `UPDATE simulations SET rewards_processed = TRUE WHERE session_id = $1`,
+        [session_id]
+      );
+      pgRecord.rewards_processed = true;
+      checkAndAwardSimulationRewards(pgRecord.owner_address, pgRecord.network, session_id)
+        .catch(err => console.error(`Failed to process simulation rewards for session ${session_id}:`, err));
     }
 
     // 2. Fetch telemetry details from MongoDB with PG fallback
@@ -378,35 +473,62 @@ router.get('/simulate/:session_id', async (req: Request, res: Response): Promise
  *   get:
  *     summary: Usage statistics for the authenticated API key
  */
-router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
+router.get('/stats', async (req: Request, res: Response): Promise<void> => {
   try {
-    const [simResult, overviewResult] = await Promise.all([
+    const ownerAddress = ((req as any).ownerId || req.headers['x-arbisim-owner'] || '').toLowerCase();
+    const apiKeyId = (req as any).apiKeyId || null;
+
+    let queryText = `
+      SELECT
+        COUNT(*)                                                               AS total,
+        COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE)               AS today,
+        COUNT(*) FILTER (WHERE created_at >= date_trunc('month', now()))       AS month,
+        COUNT(*) FILTER (WHERE status = 'APPROVED'
+                           AND created_at >= date_trunc('month', now()))       AS approved,
+        COUNT(*) FILTER (WHERE status IN ('APPROVED','REJECTED')
+                           AND created_at >= date_trunc('month', now()))       AS terminal
+      FROM simulations
+    `;
+    const params: any[] = [];
+    if (ownerAddress) {
+      queryText += ` WHERE owner_address = $1`;
+      params.push(ownerAddress);
+    } else if (apiKeyId) {
+      queryText += ` WHERE api_key_id = $1`;
+      params.push(apiKeyId);
+    }
+
+    const [result, overviewResult] = await Promise.all([
+      pgPool.query(queryText, params),
       pgPool.query(`
         SELECT
-          COUNT(*)                                                               AS total,
-          COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE)               AS today,
-          COUNT(*) FILTER (WHERE created_at >= date_trunc('month', now()))       AS month,
-          COUNT(*) FILTER (WHERE status = 'APPROVED'
-                             AND created_at >= date_trunc('month', now()))       AS approved,
-          COUNT(*) FILTER (WHERE status IN ('APPROVED','REJECTED')
-                             AND created_at >= date_trunc('month', now()))       AS terminal
-        FROM simulations
-      `),
-      pgPool.query(`
-        SELECT
-          COUNT(DISTINCT owner_email)                                                         AS total_users,
-          (SELECT COUNT(DISTINCT user_address) FROM verified_payments)                        AS paid_users,
-          COALESCE((SELECT SUM(amount::numeric) FROM verified_payments), 0)                   AS revenue_usdc
+          COUNT(DISTINCT owner_email)                                        AS total_users,
+          (SELECT COUNT(DISTINCT user_address) FROM verified_payments)       AS paid_users,
+          COALESCE((SELECT SUM(amount::numeric) FROM verified_payments), 0)  AS revenue_usdc
         FROM api_keys
         WHERE revoked_at IS NULL
       `),
     ]);
 
-    const row = simResult.rows[0];
+    const row = result.rows[0];
     const ov  = overviewResult.rows[0];
     const terminal  = Number(row.terminal);
     const approved  = Number(row.approved);
     const approval_rate = terminal > 0 ? Math.round((approved / terminal) * 100) : null;
+
+    let purchased_credits = 0;
+    let earned_credits = 0;
+    let total_credits = 0;
+
+    if (ownerAddress) {
+      const user = await getOrCreateUser(ownerAddress);
+      purchased_credits = user.total_purchased;
+      total_credits = user.credit_balance;
+      earned_credits = Math.max(0, user.credit_balance + user.total_consumed - user.total_purchased);
+    }
+
+    const tier = (req as any).tier || 'free';
+    const limit = tier === 'pro' ? 10000 : tier === 'enterprise' ? 100000 : 500;
 
     res.json({
       today:         Number(row.today),
@@ -414,7 +536,10 @@ router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
       total:         Number(row.total),
       approval_rate,
       quota_used:    Number(row.month),
-      quota_limit:   500,
+      quota_limit:   limit,
+      purchased_credits,
+      earned_credits,
+      total_credits,
       total_users:   Number(ov.total_users),
       paid_users:    Number(ov.paid_users),
       revenue_usdc:  Number(ov.revenue_usdc).toFixed(2),
@@ -448,6 +573,15 @@ router.post('/validate-userop', async (req: Request, res: Response): Promise<voi
       await provider.send('anvil_setBalance', [entryPointAddress, '0x56BC75E2D63100000']); // 100 ETH
     } catch (err) {
       console.warn("Impersonation warning (node might not support anvil RPCs):", err);
+    }
+
+    // 1b. Fund the smart account sender so it passes deposit/gas checks
+    if (user_op?.sender) {
+      try {
+        await provider.send('anvil_setBalance', [user_op.sender, '0x56BC75E2D63100000']);
+      } catch (err) {
+        console.warn("Could not fund UserOp sender:", err);
+      }
     }
 
     // 2. State override set (can override code/balance for execution runtime sandbox)
@@ -608,6 +742,16 @@ publicRouter.get('/public/:sessionId', async (req: Request, res: Response): Prom
       return;
     }
 
+    if ((pgRecord.status === 'APPROVED' || pgRecord.status === 'REJECTED') && !pgRecord.rewards_processed && pgRecord.owner_address) {
+      await pgPool.query(
+        `UPDATE simulations SET rewards_processed = TRUE WHERE session_id = $1`,
+        [sessionId]
+      );
+      pgRecord.rewards_processed = true;
+      checkAndAwardSimulationRewards(pgRecord.owner_address, pgRecord.network, sessionId)
+        .catch(err => console.error(`Failed to process simulation rewards for session ${sessionId}:`, err));
+    }
+
     // Fetch telemetry from MongoDB with PG fallback (same pattern as authenticated route)
     let mongoRecord = null;
     try {
@@ -637,6 +781,39 @@ publicRouter.get('/public/:sessionId', async (req: Request, res: Response): Prom
       x402_payment_risk: !!(chainExtrasPublic.x402_payment_risk),
     } : null;
 
+    // Calculate top 10 opcodes by gas cost
+    const parseGasVal = (val: any): number => {
+      if (val === undefined || val === null) return 0;
+      if (typeof val === 'number') return val;
+      const s = String(val).trim();
+      if (s.startsWith('0x') || s.startsWith('0X')) {
+        return parseInt(s, 16);
+      }
+      return parseInt(s, 10) || 0;
+    };
+
+    const opcodesGas: Record<string, number> = {};
+    const structLogs = telemetry?.execution_traces || [];
+    for (let i = 0; i < structLogs.length; i++) {
+      const log = structLogs[i];
+      const op = log.op;
+      if (!op) continue;
+      
+      let cost = 0;
+      if (i < structLogs.length - 1) {
+        cost = Math.max(0, parseGasVal(log.gas) - parseGasVal(structLogs[i+1].gas));
+      } else {
+        cost = parseGasVal(log.gasCost ?? 0);
+      }
+      
+      opcodesGas[op] = (opcodesGas[op] || 0) + cost;
+    }
+
+    const topOpcodes = Object.entries(opcodesGas)
+      .map(([op, gas]) => ({ op, gas }))
+      .sort((a, b) => b.gas - a.gas)
+      .slice(0, 10);
+
     // Return sanitised result — no API key info, no owner details
     res.json({
       session_id: pgRecord.session_id,
@@ -652,10 +829,33 @@ publicRouter.get('/public/:sessionId', async (req: Request, res: Response): Prom
       flags,
       gasBreakdown: telemetry?.gas_breakdown ?? undefined,
       timeboost: telemetry?.timeboost_mev_telemetry ?? undefined,
+      balanceTraces: telemetry?.balance_traces ?? [],
+      tokenTransfers: telemetry?.token_transfers ?? [],
+      topOpcodes,
     });
   } catch (error) {
     console.error(`Public sim lookup failed for ${sessionId}:`, error);
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch simulation.' } });
+  }
+});
+
+/**
+ * @openapi
+ * /api/v1/sim/public/{sessionId}/view:
+ *   post:
+ *     summary: Track a unique view on a public simulation and award credits on milestone
+ */
+publicRouter.post('/public/:sessionId/view', async (req: Request, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+  const ip = (req.headers['x-forwarded-for'] as string ?? req.ip ?? '127.0.0.1').split(',')[0].trim();
+  const ipHash = crypto.createHash('sha256').update(ip).digest('hex');
+
+  try {
+    const result = await recordSimView(sessionId, ipHash);
+    res.json({ success: true, uniqueViews: result.uniqueViews, isNewUnique: result.success });
+  } catch (error) {
+    console.error(`Failed to record view for simulation ${sessionId}:`, error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to record view.' } });
   }
 });
 

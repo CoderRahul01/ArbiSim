@@ -32,7 +32,6 @@ function useBillingStats() {
   useEffect(() => {
     const raw = localStorage.getItem('arbisim_api_key') ?? '';
     const key = raw.trim().replace(/[^\x20-\x7E]/g, '');
-    if (key) setTier(parseTierFromKey(key));
     if (!key) return;
 
     fetch(`${CF_WORKER_URL}/api/v1/stats`, { headers: { 'X-API-Key': key } })
@@ -40,7 +39,11 @@ function useBillingStats() {
       .then((data: { quota_used?: number; quota_limit?: number } | null) => {
         if (!data) return;
         setQuotaUsed(data.quota_used ?? 0);
-        setQuotaLimit(data.quota_limit ?? 500);
+        const limit = data.quota_limit ?? 500;
+        setQuotaLimit(limit);
+        if (limit >= 100_000) setTier('enterprise');
+        else if (limit >= 10_000) setTier('pro');
+        else setTier('free');
       })
       .catch(() => {});
   }, []);
@@ -114,12 +117,126 @@ const PLANS = [
 
 export default function BillingPage() {
   const { quotaUsed, quotaLimit, tier } = useBillingStats();
+  const { address } = useAccount();
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<{ type: 'idle' | 'signing' | 'confirming' | 'verifying' | 'success' | 'error'; message?: string }>({ type: 'idle' });
+  const [creditBalance, setCreditBalance] = useState(0);
+  const [totalPurchased, setTotalPurchased] = useState(0);
+  const [totalConsumed, setTotalConsumed] = useState(0);
+  const [creditHistory, setCreditHistory] = useState<any[]>([]);
+  const [buyingPack, setBuyingPack] = useState<string | null>(null);
+
+  const [referralCode, setReferralCode] = useState('');
+  const [redeemCode, setRedeemCode] = useState('');
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemError, setRedeemError] = useState('');
+  const [redeemSuccess, setRedeemSuccess] = useState('');
 
   const tierInfo = TIER_LIMITS[tier] ?? TIER_LIMITS['free'];
   const pct = Math.min(100, quotaLimit > 0 ? (quotaUsed / quotaLimit) * 100 : 0);
   const quotaWarning = pct > 80;
+
+  // Fetch credit balance
+  useEffect(() => {
+    if (!address) return;
+    const token = localStorage.getItem('arbisim_jwt');
+    if (!token) return;
+
+    fetch(`${CF_WORKER_URL}/api/v1/admin/credit-balance?address=${address}`, {
+      headers: { 'X-API-Key': token },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: any) => {
+        if (!data) return;
+        setCreditBalance(data.credit_balance ?? 0);
+        setTotalPurchased(data.total_purchased ?? 0);
+        setTotalConsumed(data.total_consumed ?? 0);
+        setCreditHistory(data.history ?? []);
+        setReferralCode(data.referral_code ?? '');
+      })
+      .catch(() => {});
+  }, [address]);
+
+  async function handleRedeemReferral(e: React.FormEvent) {
+    e.preventDefault();
+    const token = localStorage.getItem('arbisim_jwt');
+    if (!token || !address) {
+      setRedeemError('Please sign in first.');
+      return;
+    }
+    setRedeeming(true);
+    setRedeemError('');
+    setRedeemSuccess('');
+    try {
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/admin/referral/redeem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': token },
+        body: JSON.stringify({ address, code: redeemCode }),
+      });
+      const data = await res.json() as any;
+      if (!res.ok) {
+        throw new Error(data?.error?.message ?? 'Redeem failed.');
+      }
+      setRedeemSuccess(data.message ?? 'Referral code redeemed successfully!');
+      setCreditBalance(data.credit_balance ?? creditBalance);
+      setRedeemCode('');
+      
+      // Refresh credit stats
+      fetch(`${CF_WORKER_URL}/api/v1/admin/credit-balance?address=${address}`, {
+        headers: { 'X-API-Key': token },
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then((data: any) => {
+          if (!data) return;
+          setCreditBalance(data.credit_balance ?? 0);
+          setTotalPurchased(data.total_purchased ?? 0);
+          setTotalConsumed(data.total_consumed ?? 0);
+          setCreditHistory(data.history ?? []);
+        })
+        .catch(() => {});
+    } catch (err: any) {
+      setRedeemError(err.message || 'Failed to redeem code.');
+    } finally {
+      setRedeeming(false);
+    }
+  }
+
+  const CREDIT_PACKS = [
+    { id: 'credit_500',   credits: 500,   price: '$9',   perCredit: '$0.018', label: 'Starter',  color: 'border-border' },
+    { id: 'credit_2500',  credits: 2500,  price: '$39',  perCredit: '$0.016', label: 'Builder',  color: 'border-coral/30', highlighted: true },
+    { id: 'credit_10000', credits: 10000, price: '$129', perCredit: '$0.013', label: 'Protocol', color: 'border-border' },
+  ];
+
+  async function handleCreditPurchase(packId: string) {
+    const token = localStorage.getItem('arbisim_jwt');
+    if (!token || !address) {
+      setTxStatus({ type: 'error', message: 'Please sign in first.' });
+      return;
+    }
+    setBuyingPack(packId);
+    setTxStatus({ type: 'signing', message: 'Creating credit checkout...' });
+    try {
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/admin/credit-checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': token },
+        body: JSON.stringify({ address, pack: packId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as any;
+        throw new Error(err?.error?.message ?? 'Checkout creation failed.');
+      }
+      const data = await res.json() as { success: boolean; invoice_url: string };
+      if (data.invoice_url) {
+        setTxStatus({ type: 'success', message: 'Redirecting to payment...' });
+        window.location.href = data.invoice_url;
+      } else {
+        throw new Error('No checkout URL returned.');
+      }
+    } catch (err: any) {
+      setTxStatus({ type: 'error', message: err.message || 'Credit purchase failed.' });
+      setBuyingPack(null);
+    }
+  }
 
   async function handleCheckout(planKey: string) {
     const token = localStorage.getItem('arbisim_jwt');
@@ -240,6 +357,77 @@ export default function BillingPage() {
               Usage resets on the 1st of each month.
             </p>
           </div>
+
+          {/* Credit balance card */}
+          <div className="rounded-xl border border-coral/20 bg-gradient-to-br from-coral/5 to-surface p-6">
+            <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-3">Prepaid Credits</p>
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="text-3xl font-semibold text-text-primary">{creditBalance.toLocaleString()}</span>
+              <span className="text-sm text-text-secondary">credits remaining</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="rounded-lg border border-border bg-surface/50 px-3 py-2">
+                <p className="text-xs text-text-tertiary">Purchased</p>
+                <p className="text-sm font-mono font-medium text-text-primary">{totalPurchased.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface/50 px-3 py-2">
+                <p className="text-xs text-text-tertiary">Used</p>
+                <p className="text-sm font-mono font-medium text-text-primary">{totalConsumed.toLocaleString()}</p>
+              </div>
+            </div>
+            {creditBalance <= 10 && creditBalance > 0 && (
+              <p className="text-xs text-amber mt-3">Low credits - purchase a pack below to continue simulating.</p>
+            )}
+          </div>
+
+          {/* Refer & Earn card */}
+          <div className="rounded-xl border border-border bg-surface p-6 flex flex-col justify-between">
+            <div>
+              <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-3">Refer & Earn</p>
+              <p className="text-xs text-text-secondary mb-4">
+                Share your code. For every friend that signs up using your code, you both get <span className="text-coral font-medium">50 bonus credits</span>!
+              </p>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg font-mono font-semibold px-3 py-1.5 bg-elevated border border-border rounded text-text-primary uppercase tracking-wide">
+                  {referralCode || 'Loading...'}
+                </span>
+                {referralCode && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(referralCode);
+                      alert('Referral code copied to clipboard!');
+                    }}
+                    className="px-3 py-1.5 bg-elevated border border-border text-xs text-text-primary rounded hover:bg-surface transition-colors"
+                  >
+                    Copy
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            <form onSubmit={handleRedeemReferral} className="border-t border-border pt-4">
+              <p className="text-xs font-semibold text-text-secondary mb-2">Redeem Referral Code</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. AS-XXXXXX"
+                  value={redeemCode}
+                  onChange={(e) => setRedeemCode(e.target.value.toUpperCase())}
+                  disabled={redeeming}
+                  className="bg-elevated border border-border rounded px-3 py-1.5 text-xs text-text-primary font-mono focus:outline-none focus:border-coral flex-1 uppercase"
+                />
+                <button
+                  type="submit"
+                  disabled={redeeming || !redeemCode}
+                  className="px-4 py-1.5 bg-coral text-white rounded text-xs font-medium hover:bg-coral-hover disabled:opacity-50 disabled:cursor-default"
+                >
+                  {redeeming ? 'Redeeming...' : 'Redeem'}
+                </button>
+              </div>
+              {redeemError && <p className="text-red-400 text-xs mt-1.5 font-mono">{redeemError}</p>}
+              {redeemSuccess && <p className="text-teal text-xs mt-1.5 font-mono">{redeemSuccess}</p>}
+            </form>
+          </div>
         </div>
 
         {/* Plan comparison */}
@@ -294,6 +482,43 @@ export default function BillingPage() {
           </div>
         </div>
 
+        {/* Credit Packs */}
+        <div>
+          <h2 className="text-sm font-semibold text-text-primary mb-1">Credit Packs</h2>
+          <p className="text-xs text-text-secondary mb-4">Buy prepaid simulation credits. Credits never expire and work across all supported chains.</p>
+          <div className="grid md:grid-cols-3 gap-4">
+            {CREDIT_PACKS.map(pack => (
+              <div key={pack.id}
+                className={`rounded-xl border p-5 flex flex-col gap-4 transition-all duration-300 ${
+                  pack.highlighted ? 'border-coral/30 bg-gradient-to-b from-coral/5 to-surface' : 'border-border bg-surface'
+                }`}>
+                {pack.highlighted && (
+                  <span className="text-xs font-mono text-coral bg-coral/10 border border-coral/20 px-2 py-0.5 rounded w-fit">Best value</span>
+                )}
+                <div>
+                  <p className="text-xs font-mono text-text-tertiary uppercase tracking-wider mb-1">{pack.label}</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-semibold text-text-primary">{pack.price}</span>
+                  </div>
+                  <p className="text-xs text-text-secondary mt-1">
+                    {pack.credits.toLocaleString()} credits · {pack.perCredit}/credit
+                  </p>
+                </div>
+                <button
+                  disabled={buyingPack !== null}
+                  onClick={() => handleCreditPurchase(pack.id)}
+                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-[0.98] disabled:opacity-70 ${
+                    pack.highlighted
+                      ? 'bg-coral text-white hover:bg-coral-hover shadow-lg shadow-coral/20'
+                      : 'border border-border text-text-primary hover:bg-elevated'
+                  }`}>
+                  {buyingPack === pack.id ? 'Redirecting...' : `Buy ${pack.credits.toLocaleString()} credits`}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* FAQ */}
         <div className="rounded-xl border border-border bg-surface p-6">
           <h3 className="text-sm font-semibold text-text-primary mb-4">Billing FAQ</h3>
@@ -309,7 +534,7 @@ export default function BillingPage() {
               },
               {
                 q: 'Can I change plans at any time?',
-                a: 'Yes — upgrades are effective immediately and prorated. Downgrades take effect at the start of the next billing period.',
+                a: 'Yes - upgrades are effective immediately and prorated. Downgrades take effect at the start of the next billing period.',
               },
               {
                 q: 'Do unused simulations roll over?',

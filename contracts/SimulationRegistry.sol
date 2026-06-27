@@ -1,199 +1,175 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
 /**
  * @title SimulationRegistry
- * @author ArbiSim Guard
- * @notice Immutable on-chain audit trail of pre-flight simulation verdicts.
- *         Each record maps a session ID to its outcome (APPROVED/REJECTED),
- *         gas cost, safety flags, and block timestamp.
- *         Deployed on Arbitrum Sepolia for the Open House London Buildathon.
- *
- * @dev Only the ArbiSim Guard backend (owner) can log simulation results.
- *      Records are write-once: a session ID cannot be overwritten.
- *      Supports both single and batch logging for gas efficiency.
+ * @notice On-chain registry for ArbiSim Guard pre-flight simulation results.
+ * @dev Chain-agnostic. Deployed on Arbitrum One and Avalanche C-Chain mainnet.
+ * @custom:version 2
  */
-contract SimulationRegistry is Ownable, Pausable, ReentrancyGuard {
+contract SimulationRegistry {
 
-    // ── Structs ─────────────────────────────────────────────────
+    // ── Version ────────────────────────────────────────────────────────────
+    uint8 public constant VERSION = 2;
 
+    // ── Roles ──────────────────────────────────────────────────────────────
+    address public owner;
+    mapping(address => bool) public reporters;
+
+    // ── Flags (uint16, chain-agnostic) ─────────────────────────────────────
+    uint16 public constant FLAG_REVERT                 = 1 << 0;
+    uint16 public constant FLAG_HIGH_SLIPPAGE          = 1 << 1;
+    uint16 public constant FLAG_MEV_RISK               = 1 << 2;
+    uint16 public constant FLAG_GAS_ESTIMATE_HIGH      = 1 << 3;
+    uint16 public constant FLAG_LOW_REPUTATION         = 1 << 4;
+    uint16 public constant FLAG_UNKNOWN_AGENT          = 1 << 5;
+    uint16 public constant FLAG_PRICE_IMPACT_HIGH      = 1 << 6;
+    uint16 public constant FLAG_INSUFFICIENT_LIQUIDITY = 1 << 7;
+    uint16 public constant FLAG_BRIDGE_RISK            = 1 << 8;
+    uint16 public constant FLAG_ORACLE_MANIPULATION    = 1 << 9;
+    uint16 public constant FLAG_VALUE_TRANSFER         = 1 << 10;
+    uint16 public constant FLAG_CONTRACT_CREATION      = 1 << 11;
+    // bits 12-15 reserved for future flags
+
+    // ── Constants ──────────────────────────────────────────────────────────
+    uint256 public constant MAX_REVERT_REASON_LENGTH = 256;
+
+    // ── Storage ────────────────────────────────────────────────────────────
     struct SimulationRecord {
-        bytes32 sessionId;
-        bool    passed;           // true = APPROVED, false = REJECTED
-        uint256 gasCostWei;       // Total L2 + L1 gas cost in wei
-        string  revertReason;     // Empty if passed; error string if rejected
-        uint8   flagsBitmap;      // Packed safety flags (see FLAG_* constants)
-        uint256 timestamp;        // block.timestamp when logged
-        address reporter;         // msg.sender (always owner)
+        address agent;
+        bytes32 txHash;
+        bool safeToExecute;
+        uint16 flagsBitmap;
+        uint64 gasEstimate;
+        uint32 chainId;
+        uint32 timestamp;
     }
-
-    // ── Safety flag bit positions ────────────────────────────────
-    // Pack up to 8 boolean flags into a single uint8 for gas savings.
-
-    uint8 public constant FLAG_EXECUTION_REVERTED   = 1 << 0; // 0x01
-    uint8 public constant FLAG_HIGH_SLIPPAGE        = 1 << 1; // 0x02
-    uint8 public constant FLAG_SANDWICH_DETECTED    = 1 << 2; // 0x04
-    uint8 public constant FLAG_UNSAFE_ALLOWANCE     = 1 << 3; // 0x08
-    uint8 public constant FLAG_SIG_FAILED           = 1 << 4; // 0x10
-    uint8 public constant FLAG_VALID_UNTIL_EXPIRED  = 1 << 5; // 0x20
-    uint8 public constant FLAG_TIMEBOOST_RECOMMENDED = 1 << 6; // 0x40
-    uint8 public constant FLAG_STYLUS_INK_OVERFLOW  = 1 << 7; // 0x80
-
-    // ── Storage ─────────────────────────────────────────────────
 
     mapping(bytes32 => SimulationRecord) public records;
-    bytes32[] public sessionIds;
+    mapping(bytes32 => string) public revertReasons;
+    mapping(address => bytes32[]) private agentSessions;
+    uint256 public totalSimulations;
 
-    // ── Events ──────────────────────────────────────────────────
-
+    // ── Events ─────────────────────────────────────────────────────────────
     event SimulationLogged(
         bytes32 indexed sessionId,
-        bool    passed,
-        uint256 gasCostWei,
-        string  revertReason,
-        uint8   flagsBitmap,
-        uint256 timestamp
+        address indexed agent,
+        bool safeToExecute,
+        uint16 flagsBitmap,
+        uint32 chainId
     );
+    event ReporterAdded(address indexed reporter);
+    event ReporterRemoved(address indexed reporter);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    event BatchLogged(uint256 count);
+    // ── Errors ─────────────────────────────────────────────────────────────
+    error Unauthorized();
+    error SessionExists(bytes32 sessionId);
+    error RevertReasonTooLong(uint256 length, uint256 max);
+    error ZeroAddress();
 
-    // ── Constructor ─────────────────────────────────────────────
+    // ── Modifiers ──────────────────────────────────────────────────────────
+    modifier onlyOwner() {
+        _onlyOwner();
+        _;
+    }
 
-    constructor() Ownable(msg.sender) {}
+    modifier onlyReporter() {
+        _onlyReporter();
+        _;
+    }
 
-    // ── Write functions ─────────────────────────────────────────
+    function _onlyOwner() internal view {
+        if (msg.sender != owner) revert Unauthorized();
+    }
 
-    /**
-     * @notice Log a single simulation verdict on-chain.
-     * @param sessionId    UUID of the simulation session (as bytes32)
-     * @param passed       true = APPROVED, false = REJECTED
-     * @param gasCostWei   Total L2 + L1 gas cost in wei
-     * @param revertReason Empty string if passed; error message if rejected
-     * @param flagsBitmap  Packed safety flags (OR the FLAG_* constants)
-     */
+    function _onlyReporter() internal view {
+        if (!reporters[msg.sender] && msg.sender != owner) revert Unauthorized();
+    }
+
+    // ── Constructor ────────────────────────────────────────────────────────
+    constructor() {
+        owner = msg.sender;
+        reporters[msg.sender] = true;
+        emit ReporterAdded(msg.sender);
+    }
+
+    // ── Reporter management ────────────────────────────────────────────────
+    function addReporter(address reporter) external onlyOwner {
+        reporters[reporter] = true;
+        emit ReporterAdded(reporter);
+    }
+
+    function removeReporter(address reporter) external onlyOwner {
+        reporters[reporter] = false;
+        emit ReporterRemoved(reporter);
+    }
+
+    // ── Core: log simulation ───────────────────────────────────────────────
     function logSimulation(
         bytes32 sessionId,
-        bool    passed,
-        uint256 gasCostWei,
+        address agent,
+        bytes32 txHash,
+        bool safeToExecute,
+        uint16 flagsBitmap,
+        uint64 gasEstimate,
         string calldata revertReason,
-        uint8   flagsBitmap
-    ) external onlyOwner whenNotPaused {
-        require(records[sessionId].timestamp == 0, "Already logged");
+        uint32 chainId
+    ) external onlyReporter {
+        if (records[sessionId].timestamp != 0) revert SessionExists(sessionId);
+        if (bytes(revertReason).length > MAX_REVERT_REASON_LENGTH)
+            revert RevertReasonTooLong(bytes(revertReason).length, MAX_REVERT_REASON_LENGTH);
 
         records[sessionId] = SimulationRecord({
-            sessionId:    sessionId,
-            passed:       passed,
-            gasCostWei:   gasCostWei,
-            revertReason: revertReason,
-            flagsBitmap:  flagsBitmap,
-            timestamp:    block.timestamp,
-            reporter:     msg.sender
+            agent:         agent,
+            txHash:        txHash,
+            safeToExecute: safeToExecute,
+            flagsBitmap:   flagsBitmap,
+            gasEstimate:   gasEstimate,
+            chainId:       chainId,
+            timestamp:     uint32(block.timestamp)
         });
 
-        sessionIds.push(sessionId);
-
-        emit SimulationLogged(
-            sessionId, passed, gasCostWei, revertReason, flagsBitmap, block.timestamp
-        );
-    }
-
-    /**
-     * @notice Log multiple simulation verdicts in a single transaction.
-     *         Saves gas when the backend has a batch of completed simulations.
-     * @param _sessionIds    Array of session IDs
-     * @param _passed        Array of verdicts
-     * @param _gasCostWeis   Array of gas costs in wei
-     * @param _revertReasons Array of revert reasons
-     * @param _flagsBitmaps  Array of packed safety flags
-     */
-    function logSimulationBatch(
-        bytes32[] calldata _sessionIds,
-        bool[]    calldata _passed,
-        uint256[] calldata _gasCostWeis,
-        string[]  calldata _revertReasons,
-        uint8[]   calldata _flagsBitmaps
-    ) external onlyOwner whenNotPaused nonReentrant {
-        uint256 len = _sessionIds.length;
-        require(
-            len == _passed.length &&
-            len == _gasCostWeis.length &&
-            len == _revertReasons.length &&
-            len == _flagsBitmaps.length,
-            "Array length mismatch"
-        );
-        require(len <= 50, "Batch too large");
-
-        for (uint256 i = 0; i < len; i++) {
-            bytes32 sid = _sessionIds[i];
-            require(records[sid].timestamp == 0, "Already logged");
-
-            records[sid] = SimulationRecord({
-                sessionId:    sid,
-                passed:       _passed[i],
-                gasCostWei:   _gasCostWeis[i],
-                revertReason: _revertReasons[i],
-                flagsBitmap:  _flagsBitmaps[i],
-                timestamp:    block.timestamp,
-                reporter:     msg.sender
-            });
-
-            sessionIds.push(sid);
-
-            emit SimulationLogged(
-                sid, _passed[i], _gasCostWeis[i], _revertReasons[i],
-                _flagsBitmaps[i], block.timestamp
-            );
+        if (bytes(revertReason).length > 0) {
+            revertReasons[sessionId] = revertReason;
         }
 
-        emit BatchLogged(len);
+        agentSessions[agent].push(sessionId);
+        totalSimulations++;
+
+        emit SimulationLogged(sessionId, agent, safeToExecute, flagsBitmap, chainId);
     }
 
-    // ── Read functions ──────────────────────────────────────────
+    // ── Read: paginated sessions ───────────────────────────────────────────
+    function getSessionIds(
+        address agent,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (bytes32[] memory page, uint256 total) {
+        bytes32[] storage all = agentSessions[agent];
+        total = all.length;
 
-    /**
-     * @notice Retrieve a simulation record by session ID.
-     */
-    function getRecord(bytes32 sessionId)
-        external view returns (SimulationRecord memory)
-    {
-        return records[sessionId];
+        if (offset >= total || limit == 0) return (new bytes32[](0), total);
+
+        uint256 end = offset + limit > total ? total : offset + limit;
+        page = new bytes32[](end - offset);
+        for (uint256 i = 0; i < page.length; i++) {
+            page[i] = all[offset + i];
+        }
     }
 
-    /**
-     * @notice Total number of simulations logged on-chain.
-     */
-    function totalSimulations() external view returns (uint256) {
-        return sessionIds.length;
+    // ── Read: full record ──────────────────────────────────────────────────
+    function getRecord(bytes32 sessionId) external view returns (
+        SimulationRecord memory record,
+        string memory revertReason
+    ) {
+        return (records[sessionId], revertReasons[sessionId]);
     }
 
-    /**
-     * @notice Check if a specific safety flag is set in a record.
-     * @param sessionId The session to check
-     * @param flag      One of the FLAG_* constants
-     */
-    function hasFlag(bytes32 sessionId, uint8 flag)
-        external view returns (bool)
-    {
-        return (records[sessionId].flagsBitmap & flag) != 0;
-    }
-
-    // ── Admin functions ─────────────────────────────────────────
-
-    /**
-     * @notice Pause the registry. Prevents new records from being logged.
-     */
-    function pause() external onlyOwner {
-        _pause();
-    }
-
-    /**
-     * @notice Unpause the registry.
-     */
-    function unpause() external onlyOwner {
-        _unpause();
+    // ── Ownership ──────────────────────────────────────────────────────────
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddress();
+        emit OwnershipTransferred(owner, newOwner);
+        owner = newOwner;
     }
 }

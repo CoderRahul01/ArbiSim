@@ -5,44 +5,51 @@ import {Script, console} from "forge-std/Script.sol";
 import {SimulationRegistry} from "../contracts/SimulationRegistry.sol";
 
 /**
- * @notice Deploy SimulationRegistry to Arbitrum Sepolia.
+ * @notice Deploy SimulationRegistry v2 to Arbitrum One mainnet.
  *
  * Usage:
  *   forge script script/Deploy.s.sol:DeploySimulationRegistry \
- *     --rpc-url $ARBITRUM_SEPOLIA_RPC \
+ *     --rpc-url $ARBITRUM_ONE_RPC \
  *     --private-key $DEPLOYER_PRIVATE_KEY \
  *     --broadcast \
  *     --verify \
  *     --etherscan-api-key $ARBISCAN_API_KEY
  */
 contract DeploySimulationRegistry is Script {
+    uint32 constant ARBITRUM_ONE_CHAIN_ID = 42161;
+
     function run() external {
         vm.startBroadcast();
 
         SimulationRegistry registry = new SimulationRegistry();
+        console.log("SimulationRegistry v2 deployed at:", address(registry));
+        console.log("Owner / initial reporter:", registry.owner());
 
-        console.log("SimulationRegistry deployed at:", address(registry));
-        console.log("Owner:", registry.owner());
-
-        // Log a sample APPROVED simulation to prove the contract works
-        bytes32 sampleId = keccak256("demo-approved-001");
+        // Sample APPROVED simulation — proves contract is live
+        bytes32 approvedId = keccak256("demo-approved-v2-001");
         registry.logSimulation(
-            sampleId,
-            true,        // passed = APPROVED
-            213000000000000, // 0.000213 ETH gas cost
-            "",          // no revert reason
-            0            // no flags fired
+            approvedId,
+            msg.sender,                 // agent
+            bytes32(0),                 // txHash (demo — no real tx)
+            true,                       // safeToExecute
+            0,                          // no flags
+            180_000,                    // gasEstimate
+            "",                         // no revert reason
+            ARBITRUM_ONE_CHAIN_ID
         );
-        console.log("Sample APPROVED simulation logged:", uint256(sampleId));
+        console.log("Sample APPROVED simulation logged:", uint256(approvedId));
 
-        // Log a sample REJECTED simulation
-        bytes32 rejectedId = keccak256("demo-rejected-001");
+        // Sample REJECTED simulation — FLAG_REVERT | FLAG_HIGH_SLIPPAGE
+        bytes32 rejectedId = keccak256("demo-rejected-v2-001");
         registry.logSimulation(
             rejectedId,
-            false,       // passed = REJECTED
-            0,           // no gas spent (reverted)
+            msg.sender,
+            bytes32(0),
+            false,
+            uint16(registry.FLAG_REVERT()) | uint16(registry.FLAG_HIGH_SLIPPAGE()),
+            0,
             "execution_reverted: insufficient output amount",
-            0x01 | 0x02  // FLAG_EXECUTION_REVERTED | FLAG_HIGH_SLIPPAGE
+            ARBITRUM_ONE_CHAIN_ID
         );
         console.log("Sample REJECTED simulation logged:", uint256(rejectedId));
 

@@ -67,6 +67,7 @@ export default function McpPlaygroundPage() {
   const [simResult,    setSimResult]    = useState<SimResult | null>(null);
   const [error,        setError]        = useState('');
   const [toolsList,    setToolsList]    = useState<Record<string, unknown> | null>(null);
+  const [configCopied, setConfigCopied] = useState(false);
   const callIdRef = useRef(1);
 
   function addExchange(type: Exchange['type'], method: string, data: unknown) {
@@ -166,13 +167,15 @@ export default function McpPlaygroundPage() {
     const cfg = JSON.stringify({
       mcpServers: {
         'arbisim-guard': {
-          command: 'node',
-          args: ['./gateway/dist/index.js', '--mcp'],
-          env: { ARBI_API_KEY: apiKey || 'ask_free_••••••••' },
+          type: 'sse',
+          url: `${CF_WORKER_URL}/mcp/sse?api_key=${apiKey || 'YOUR_API_KEY'}`,
         },
       },
     }, null, 2);
-    navigator.clipboard.writeText(cfg).catch(() => {});
+    navigator.clipboard.writeText(cfg).then(() => {
+      setConfigCopied(true);
+      setTimeout(() => setConfigCopied(false), 2000);
+    }).catch(() => {});
   }, [apiKey]);
 
   return (
@@ -190,8 +193,12 @@ export default function McpPlaygroundPage() {
               List tools
             </button>
             <button onClick={copyConfig}
-              className="px-3 py-1.5 rounded-lg border border-border text-xs font-mono text-text-secondary hover:text-text-primary hover:bg-elevated transition-all duration-150">
-              Copy Claude Desktop config
+              className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 ${
+                configCopied
+                  ? 'border-teal/30 bg-teal/10 text-teal'
+                  : 'border-border text-text-secondary hover:text-text-primary hover:bg-elevated'
+              }`}>
+              {configCopied ? '✓ Copied' : 'Copy MCP config'}
             </button>
           </div>
         </div>
@@ -222,6 +229,8 @@ export default function McpPlaygroundPage() {
                     className="w-full px-3 py-2.5 rounded-lg border border-border bg-elevated text-text-primary text-sm font-mono focus:outline-none focus:border-coral/50 transition-colors">
                     <option value="arbitrum-one">arbitrum-one</option>
                     <option value="arbitrum-sepolia">arbitrum-sepolia</option>
+                    <option value="avalanche-mainnet">avalanche-mainnet</option>
+                    <option value="avalanche-fuji">avalanche-fuji</option>
                     <option value="robinhood-chain-testnet">robinhood-chain-testnet</option>
                   </select>
                 </div>
@@ -337,9 +346,9 @@ export default function McpPlaygroundPage() {
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: 'Gas cost', value: simResult.gas_cost_eth ? `${simResult.gas_cost_eth} ETH` : '—' },
-                    { label: 'Net P&L',  value: simResult.net_pnl_usd ? `$${simResult.net_pnl_usd}` : '—' },
-                    { label: 'Slippage', value: simResult.slippage_detected ?? '—' },
+                    { label: 'Gas cost', value: simResult.gas_cost_eth ? `${simResult.gas_cost_eth} ETH` : '-' },
+                    { label: 'Net P&L',  value: simResult.net_pnl_usd ? `$${simResult.net_pnl_usd}` : '-' },
+                    { label: 'Slippage', value: simResult.slippage_detected ?? '-' },
                   ].map(m => (
                     <div key={m.label} className="p-3 rounded-lg bg-surface border border-border">
                       <p className="text-xs text-text-tertiary mb-1 font-mono">{m.label}</p>
@@ -360,23 +369,22 @@ export default function McpPlaygroundPage() {
         {/* How-to callout */}
         <div className="mt-6 rounded-xl border border-border bg-surface p-5">
           <h3 className="text-xs font-semibold text-text-primary mb-3 font-mono uppercase tracking-wider">Use from your agent</h3>
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-3 gap-4">
             <div>
-              <p className="text-xs text-text-tertiary mb-2 font-mono">Claude Desktop / Cursor config</p>
+              <p className="text-xs text-text-tertiary mb-2 font-mono">Claude Desktop / Cursor — SSE</p>
               <pre className="text-xs font-mono text-text-secondary bg-elevated border border-border rounded-lg p-3 overflow-x-auto">{`{
   "mcpServers": {
     "arbisim-guard": {
-      "command": "node",
-      "args": ["./gateway/dist/index.js", "--mcp"],
-      "env": { "ARBI_API_KEY": "${apiKey || 'ask_free_••••••••'}" }
+      "type": "sse",
+      "url": "${CF_WORKER_URL}/mcp/sse?api_key=${apiKey || 'YOUR_API_KEY'}"
     }
   }
 }`}</pre>
             </div>
             <div>
-              <p className="text-xs text-text-tertiary mb-2 font-mono">HTTP (this playground endpoint)</p>
+              <p className="text-xs text-text-tertiary mb-2 font-mono">HTTP JSON-RPC (this endpoint)</p>
               <pre className="text-xs font-mono text-text-secondary bg-elevated border border-border rounded-lg p-3 overflow-x-auto">{`POST ${CF_WORKER_URL}/api/v1/mcp
-X-API-Key: ${apiKey || 'ask_free_••••••••'}
+X-API-Key: ${apiKey || 'YOUR_API_KEY'}
 
 {
   "jsonrpc": "2.0", "id": 1,
@@ -386,6 +394,26 @@ X-API-Key: ${apiKey || 'ask_free_••••••••'}
     "arguments": { ... }
   }
 }`}</pre>
+            </div>
+            <div>
+              <p className="text-xs text-text-tertiary mb-2 font-mono">Available tools</p>
+              <div className="bg-elevated border border-border rounded-lg p-3 space-y-2">
+                {[
+                  { name: 'preflight_simulate', desc: 'Run pre-flight simulation' },
+                  { name: 'get_simulation_status', desc: 'Poll for verdict' },
+                  { name: 'x402_preflight', desc: 'Simulate x402 payment' },
+                  { name: 'backtest_strategy', desc: 'Replay across blocks' },
+                  { name: 'get_backtest_results', desc: 'Poll backtest result' },
+                ].map(t => (
+                  <div key={t.name} className="flex items-start gap-2">
+                    <span className="text-coral font-mono text-[10px] shrink-0 mt-0.5">→</span>
+                    <div>
+                      <p className="text-[10px] font-mono text-text-primary">{t.name}</p>
+                      <p className="text-[10px] text-text-tertiary">{t.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

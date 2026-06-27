@@ -57,6 +57,8 @@ export async function initDb(): Promise<void> {
       )
     `);
     await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS api_key_id TEXT`);
+    await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS owner_address VARCHAR(42)`);
+    await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS rewards_processed BOOLEAN DEFAULT FALSE`);
 
     // Create database-backed queue table
     await client.query(`
@@ -118,6 +120,60 @@ export async function initDb(): Promise<void> {
       )
     `);
 
+    // ── Credit System Tables ──────────────────────────────────────────────
+
+    // Users table - tracks wallet-based users and their credit balance
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        wallet_address  VARCHAR(42) PRIMARY KEY,
+        credit_balance  INTEGER NOT NULL DEFAULT 0,
+        total_purchased INTEGER NOT NULL DEFAULT 0,
+        total_consumed  INTEGER NOT NULL DEFAULT 0,
+        referral_code   VARCHAR(20) UNIQUE,
+        referred_by     VARCHAR(42),
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // Credit transactions - immutable ledger of all credit changes
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS credit_transactions (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        wallet_address VARCHAR(42) NOT NULL REFERENCES users(wallet_address),
+        amount      INTEGER NOT NULL,
+        type        VARCHAR(30) NOT NULL,
+        description TEXT,
+        reference_id TEXT,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      'CREATE INDEX IF NOT EXISTS ct_wallet_idx ON credit_transactions (wallet_address, created_at DESC)'
+    );
+
+    // Referral codes table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS referral_codes (
+        code            VARCHAR(20) PRIMARY KEY,
+        owner_wallet    VARCHAR(42) NOT NULL REFERENCES users(wallet_address),
+        bonus_credits   INTEGER NOT NULL DEFAULT 50,
+        times_used      INTEGER NOT NULL DEFAULT 0,
+        max_uses        INTEGER NOT NULL DEFAULT 100,
+        active          BOOLEAN NOT NULL DEFAULT TRUE,
+      )
+    `);
+
+    // Create sim_views table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sim_views (
+        sim_id VARCHAR(36) NOT NULL,
+        ip_hash VARCHAR(64) NOT NULL,
+        viewed_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (sim_id, ip_hash)
+      )
+    `);
+
     await client.query('COMMIT');
     console.log('PostgreSQL schemas initialized successfully.');
   } catch (error) {
@@ -144,6 +200,8 @@ export interface SimulationRow {
   status: string;
   telemetry?: any;
   api_key_id?: string | null;
+  owner_address?: string | null;
+  rewards_processed?: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -152,14 +210,21 @@ export async function createSimulation(
   sessionId: string,
   network: string,
   agentAddress: string,
-  apiKeyId: string | null = null
+  apiKeyId: string | null = null,
+  ownerAddress: string | null = null
 ): Promise<SimulationRow> {
   const queryText = `
-    INSERT INTO simulations (session_id, network, agent_address, status, api_key_id)
-    VALUES ($1, $2, $3, 'PENDING', $4)
+    INSERT INTO simulations (session_id, network, agent_address, status, api_key_id, owner_address)
+    VALUES ($1, $2, $3, 'PENDING', $4, $5)
     RETURNING *
   `;
-  const res = await pgPool.query(queryText, [sessionId, network, agentAddress, apiKeyId]);
+  const res = await pgPool.query(queryText, [
+    sessionId,
+    network,
+    agentAddress,
+    apiKeyId,
+    ownerAddress ? ownerAddress.toLowerCase() : null
+  ]);
   return res.rows[0];
 }
 
@@ -413,5 +478,322 @@ export async function recordPayment(
      ON CONFLICT (tx_hash) DO NOTHING`,
     [txHash.toLowerCase(), userAddress.toLowerCase(), tier.toLowerCase(), amount]
   );
+}
+
+// ── Credit System Helpers ─────────────────────────────────────────────────
+
+export interface UserRow {
+  wallet_address: string;
+  credit_balance: number;
+  total_purchased: number;
+  total_consumed: number;
+  referral_code: string | null;
+  referred_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export async function getOrCreateUser(walletAddress: string): Promise<UserRow> {
+  const addr = walletAddress.toLowerCase();
+  const res = await pgPool.query(
+    `INSERT INTO users (wallet_address, credit_balance)
+     VALUES ($1, 0)
+     ON CONFLICT (wallet_address) DO UPDATE SET updated_at = NOW()
+     RETURNING *`,
+    [addr]
+  );
+  return res.rows[0];
+}
+
+export async function getUserCredits(walletAddress: string): Promise<number> {
+  const addr = walletAddress.toLowerCase();
+  const res = await pgPool.query(
+    'SELECT credit_balance FROM users WHERE wallet_address = $1',
+    [addr]
+  );
+  return res.rows[0]?.credit_balance ?? 0;
+}
+
+export async function addCredits(
+  walletAddress: string,
+  amount: number,
+  type: string,
+  description: string,
+  referenceId?: string
+): Promise<number> {
+  const addr = walletAddress.toLowerCase();
+  const client = await pgPool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE users
+       SET credit_balance = credit_balance + $1,
+           total_purchased = total_purchased + $1,
+           updated_at = NOW()
+       WHERE wallet_address = $2`,
+      [amount, addr]
+    );
+    await client.query(
+      `INSERT INTO credit_transactions (wallet_address, amount, type, description, reference_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [addr, amount, type, description, referenceId ?? null]
+    );
+    const res = await client.query(
+      'SELECT credit_balance FROM users WHERE wallet_address = $1',
+      [addr]
+    );
+    await client.query('COMMIT');
+    return res.rows[0].credit_balance;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deductCredit(
+  walletAddress: string,
+  amount: number = 1,
+  description: string = 'simulation'
+): Promise<{ success: boolean; remaining: number }> {
+  const addr = walletAddress.toLowerCase();
+  const client = await pgPool.connect();
+  try {
+    await client.query('BEGIN');
+    const res = await client.query(
+      `UPDATE users
+       SET credit_balance = credit_balance - $1,
+           total_consumed = total_consumed + $1,
+           updated_at = NOW()
+       WHERE wallet_address = $2 AND credit_balance >= $1
+       RETURNING credit_balance`,
+      [amount, addr]
+    );
+    if (res.rows.length === 0) {
+      await client.query('ROLLBACK');
+      const bal = await pgPool.query('SELECT credit_balance FROM users WHERE wallet_address = $1', [addr]);
+      return { success: false, remaining: bal.rows[0]?.credit_balance ?? 0 };
+    }
+    await client.query(
+      `INSERT INTO credit_transactions (wallet_address, amount, type, description)
+       VALUES ($1, $2, 'deduction', $3)`,
+      [addr, -amount, description]
+    );
+    await client.query('COMMIT');
+    return { success: true, remaining: res.rows[0].credit_balance };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getCreditHistory(
+  walletAddress: string,
+  limit: number = 50
+): Promise<any[]> {
+  const addr = walletAddress.toLowerCase();
+  const res = await pgPool.query(
+    `SELECT id, amount, type, description, reference_id, created_at
+     FROM credit_transactions
+     WHERE wallet_address = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [addr, limit]
+  );
+  return res.rows;
+}
+
+export async function createReferralCode(
+  walletAddress: string,
+  code: string,
+  bonusCredits: number = 50
+): Promise<void> {
+  const addr = walletAddress.toLowerCase();
+  await pgPool.query(
+    `INSERT INTO referral_codes (code, owner_wallet, bonus_credits)
+     VALUES ($1, $2, $3)`,
+    [code.toUpperCase(), addr, bonusCredits]
+  );
+  await pgPool.query(
+    `UPDATE users SET referral_code = $1 WHERE wallet_address = $2`,
+    [code.toUpperCase(), addr]
+  );
+}
+
+export async function redeemReferralCode(
+  walletAddress: string,
+  code: string
+): Promise<{ success: boolean; message: string }> {
+  const addr = walletAddress.toLowerCase();
+  const codeUpper = code.toUpperCase();
+  const client = await pgPool.connect();
+  try {
+    await client.query('BEGIN');
+    // Check if user already used a referral
+    const userRes = await client.query(
+      'SELECT referred_by FROM users WHERE wallet_address = $1',
+      [addr]
+    );
+    if (userRes.rows[0]?.referred_by) {
+      await client.query('ROLLBACK');
+      return { success: false, message: 'You have already used a referral code.' };
+    }
+    // Check if code exists and is active
+    const codeRes = await client.query(
+      'SELECT * FROM referral_codes WHERE code = $1 AND active = TRUE AND times_used < max_uses',
+      [codeUpper]
+    );
+    if (codeRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: 'Invalid or expired referral code.' };
+    }
+    const refCode = codeRes.rows[0];
+    if (refCode.owner_wallet === addr) {
+      await client.query('ROLLBACK');
+      return { success: false, message: 'You cannot use your own referral code.' };
+    }
+    const bonus = refCode.bonus_credits;
+    // Credit the new user
+    await client.query(
+      `UPDATE users SET credit_balance = credit_balance + $1, referred_by = $2, updated_at = NOW() WHERE wallet_address = $3`,
+      [bonus, refCode.owner_wallet, addr]
+    );
+    await client.query(
+      `INSERT INTO credit_transactions (wallet_address, amount, type, description, reference_id) VALUES ($1, $2, 'referral_bonus', 'Referral code bonus', $3)`,
+      [addr, bonus, codeUpper]
+    );
+    // Credit the referrer
+    await client.query(
+      `UPDATE users SET credit_balance = credit_balance + $1, updated_at = NOW() WHERE wallet_address = $2`,
+      [bonus, refCode.owner_wallet]
+    );
+    await client.query(
+      `INSERT INTO credit_transactions (wallet_address, amount, type, description, reference_id) VALUES ($1, $2, 'referral_reward', 'Referral reward for code usage', $3)`,
+      [refCode.owner_wallet, bonus, codeUpper]
+    );
+    // Increment usage count
+    await client.query(
+      `UPDATE referral_codes SET times_used = times_used + 1 WHERE code = $1`,
+      [codeUpper]
+    );
+    await client.query('COMMIT');
+    return { success: true, message: `${bonus} credits added to your account!` };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function checkAndAwardSimulationRewards(
+  ownerAddress: string,
+  network: string,
+  sessionId: string
+): Promise<void> {
+  const addr = ownerAddress.toLowerCase();
+  
+  // 1. First sim on new chain (+3)
+  try {
+    const chainCountRes = await pgPool.query(
+      `SELECT COUNT(*)::integer as count 
+       FROM simulations 
+       WHERE owner_address = $1 AND network = $2 AND status IN ('APPROVED', 'REJECTED') AND session_id != $3`,
+      [addr, network, sessionId]
+    );
+    const firstSim = (chainCountRes.rows[0]?.count ?? 0) === 0;
+    if (firstSim) {
+      await addCredits(
+        addr,
+        3,
+        'first_chain_bonus',
+        `First simulation bonus on ${network}`,
+        sessionId
+      );
+      console.log(`[Rewards] Awarded +3 credits to ${addr} for first sim on ${network}.`);
+    }
+  } catch (err) {
+    console.error(`[Rewards] First chain reward failed for ${addr}:`, err);
+  }
+
+  // 2. Milestone: 10 sims in month (+5) / 50 sims in month (+15)
+  try {
+    const monthlyCountRes = await pgPool.query(
+      `SELECT COUNT(*)::integer as count 
+       FROM simulations 
+       WHERE owner_address = $1 AND status IN ('APPROVED', 'REJECTED') AND created_at >= date_trunc('month', now())`,
+      [addr]
+    );
+    const monthlyCount = monthlyCountRes.rows[0]?.count ?? 0;
+    
+    if (monthlyCount === 10) {
+      await addCredits(
+        addr,
+        5,
+        'monthly_10_bonus',
+        'Milestone bonus: 10 simulations in a month',
+        sessionId
+      );
+      console.log(`[Rewards] Awarded +5 credits to ${addr} for 10 sims milestone.`);
+    } else if (monthlyCount === 50) {
+      await addCredits(
+        addr,
+        15,
+        'monthly_50_bonus',
+        'Milestone bonus: 50 simulations in a month',
+        sessionId
+      );
+      console.log(`[Rewards] Awarded +15 credits to ${addr} for 50 sims milestone.`);
+    }
+  } catch (err) {
+    console.error(`[Rewards] Milestone rewards failed for ${addr}:`, err);
+  }
+}
+
+export async function recordSimView(
+  sessionId: string,
+  ipHash: string
+): Promise<{ success: boolean; uniqueViews: number }> {
+  try {
+    await pgPool.query(
+      `INSERT INTO sim_views (sim_id, ip_hash) VALUES ($1, $2)`,
+      [sessionId, ipHash]
+    );
+
+    const countRes = await pgPool.query(
+      `SELECT COUNT(*)::integer as count FROM sim_views WHERE sim_id = $1`,
+      [sessionId]
+    );
+    const uniqueViews = countRes.rows[0]?.count ?? 0;
+
+    if (uniqueViews === 5) {
+      const sim = await getSimulation(sessionId);
+      if (sim && sim.owner_address) {
+        await addCredits(
+          sim.owner_address,
+          2,
+          'share_reward',
+          `Share reward: 5 unique views on simulation ${sessionId.slice(0, 8)}`,
+          sessionId
+        );
+        console.log(`[Rewards] Awarded +2 credits to ${sim.owner_address} for 5 unique views on sim ${sessionId}`);
+      }
+    }
+
+    return { success: true, uniqueViews };
+  } catch (err: any) {
+    if (err.code === '23505') {
+      // Unique constraint violation (duplicate view)
+      const countRes = await pgPool.query(
+        `SELECT COUNT(*)::integer as count FROM sim_views WHERE sim_id = $1`,
+        [sessionId]
+      );
+      return { success: false, uniqueViews: countRes.rows[0]?.count ?? 0 };
+    }
+    throw err;
+  }
 }
 

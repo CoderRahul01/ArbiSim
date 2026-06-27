@@ -34,7 +34,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://arbisim-guard.vercel.app'),
-  title: 'ArbiSim Guard — Pre-Flight Simulation for AI Agents',
+  title: 'ArbiSim Guard - Pre-Flight Simulation for AI Agents',
   description:
     'Test DeFi transactions in an isolated Arbitrum fork before executing with real capital. Catch reverts, slippage, MEV attacks, and stale UserOps before they cost you.',
   openGraph: {

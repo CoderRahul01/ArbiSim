@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useAccount } from 'wagmi';
+import { SUPPORTED_NETWORKS } from '../../../lib/chains';
 import { posthog } from '@/lib/posthog';
 
 const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
@@ -233,8 +234,11 @@ export default function BacktestPage() {
                   onChange={e => setNetwork(e.target.value)}
                   className="w-full px-4 py-3 rounded-lg border border-border bg-surface text-text-primary text-sm focus:outline-none focus:border-coral/50 transition-colors"
                 >
-                  <option value="arbitrum-one">arbitrum-one</option>
-                  <option value="arbitrum-sepolia">arbitrum-sepolia</option>
+                  {Object.values(SUPPORTED_NETWORKS)
+                    .filter(chain => !chain.comingSoon)
+                    .map(chain => (
+                      <option key={chain.id} value={chain.id}>{chain.displayName}</option>
+                    ))}
                 </select>
               </div>
               <div>
