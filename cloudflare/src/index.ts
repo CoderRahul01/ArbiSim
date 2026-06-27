@@ -54,7 +54,7 @@ export default {
     }
   },
 
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const origin = request.headers.get('Origin');
 
     if (request.method === 'OPTIONS') {
@@ -231,8 +231,9 @@ export default {
           const endpointEvent = `event: endpoint\ndata: /mcp/message?session=${sessionId}\n\n`;
           await writer.write(enc.encode(endpointEvent));
 
-          // Poll up to 25 s for a KV message, then send keep-alive and close
-          const deadline = Date.now() + 25_000;
+          // Poll up to 55s for a KV message; send heartbeats every 5s to keep stream alive
+          const deadline = Date.now() + 55_000;
+          let lastHeartbeat = Date.now();
           while (Date.now() < deadline) {
             const msg = await env.API_KEYS.get(`mcp_msg:${sessionId}`);
             if (msg) {
@@ -240,10 +241,14 @@ export default {
               await writer.write(enc.encode(`data: ${msg}\n\n`));
               break;
             }
-            await new Promise(r => setTimeout(r, 500));
+            // Send SSE heartbeat every 5s so client doesn't timeout
+            if (Date.now() - lastHeartbeat > 5_000) {
+              await writer.write(enc.encode(': ping\n\n'));
+              lastHeartbeat = Date.now();
+            }
+            await new Promise(r => setTimeout(r, 300));
           }
 
-          // Keep-alive comment so the client knows we're still alive
           await writer.write(enc.encode(': keep-alive\n\n'));
         } catch { /* stream closed by client */ } finally {
           await writer.close().catch(() => {});
@@ -290,11 +295,11 @@ export default {
         return jsonError(400, 'BAD_REQUEST', 'Invalid JSON body.', origin);
       }
 
-      // Forward to Gateway MCP handler
+      // Fire gateway call in background — return 202 immediately so the MCP client
+      // doesn't timeout waiting. The SSE stream polls KV for the result.
       const gatewayUrl = env.GATEWAY_URL.replace(/\/$/, '') + '/api/v1/mcp';
-      let gatewayResp: Response;
-      try {
-        gatewayResp = await fetch(gatewayUrl, {
+      ctx.waitUntil(
+        fetch(gatewayUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -303,14 +308,11 @@ export default {
             'X-ArbiSim-Key-Hash': session.keyHash.slice(0, 8),
           },
           body: JSON.stringify(body),
-        });
-      } catch {
-        return jsonError(502, 'GATEWAY_ERROR', 'Simulation engine unreachable.', origin);
-      }
-
-      const responseText = await gatewayResp.text();
-      // Publish response to KV so the SSE stream picks it up
-      await env.API_KEYS.put(`mcp_msg:${sessionId}`, responseText, { expirationTtl: 60 });
+        })
+          .then(r => r.text())
+          .then(text => env.API_KEYS.put(`mcp_msg:${sessionId}`, text, { expirationTtl: 60 }))
+          .catch(err => console.error('MCP gateway error:', err))
+      );
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 202,
