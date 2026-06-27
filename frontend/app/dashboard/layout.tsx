@@ -82,6 +82,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: '/dashboard/setup',
+    label: 'Setup',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M5.5 8.5L7 10l3.5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/billing',
     label: 'Billing',
     icon: (
