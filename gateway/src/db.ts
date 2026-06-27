@@ -160,7 +160,7 @@ export async function initDb(): Promise<void> {
         bonus_credits   INTEGER NOT NULL DEFAULT 50,
         times_used      INTEGER NOT NULL DEFAULT 0,
         max_uses        INTEGER NOT NULL DEFAULT 100,
-        active          BOOLEAN NOT NULL DEFAULT TRUE,
+        active          BOOLEAN NOT NULL DEFAULT TRUE
       )
     `);
 
