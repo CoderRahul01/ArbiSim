@@ -192,6 +192,28 @@ export default function DashboardOverview() {
 
       <div className="flex-1 px-6 md:px-8 py-8 max-w-5xl w-full mx-auto">
 
+        {/* Onboarding banner — shown only when no API key exists yet */}
+        {!hasApiKey && (
+          <div className="mb-6 flex items-center gap-4 px-5 py-4 rounded-xl border border-coral/30 bg-coral/5 animate-slide-up">
+            <div className="w-8 h-8 rounded-lg bg-coral/10 border border-coral/20 flex items-center justify-center shrink-0 text-coral">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 1v2M8 13v2M1 8h2M13 8h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.5"/>
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-text-primary">Complete your setup</p>
+              <p className="text-xs text-text-secondary mt-0.5">Get your API key and MCP config in 2 minutes — no JSON needed.</p>
+            </div>
+            <Link
+              href="/setup"
+              className="shrink-0 px-4 py-2 rounded-lg bg-coral text-white text-xs font-semibold hover:bg-coral/90 transition-all shadow-sm shadow-coral/30 active:scale-[0.98]"
+            >
+              Get set up →
+            </Link>
+          </div>
+        )}
+
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {statCards.map(s => (

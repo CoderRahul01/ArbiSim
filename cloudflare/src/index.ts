@@ -4,6 +4,7 @@ export interface Env {
   RATE_LIMIT_WINDOW_SECONDS: string;
   ADMIN_API_KEY: string;
   JWT_SECRET: string;
+  RENDER_WORKER_URL: string;
 }
 
 import jwt from '@tsndr/cloudflare-worker-jwt';
@@ -46,6 +47,13 @@ function jsonError(status: number, code: string, message: string, origin: string
 }
 
 export default {
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    const base = (env.RENDER_WORKER_URL || '').replace(/\/$/, '');
+    if (base) {
+      await fetch(`${base}/ping`, { method: 'GET' }).catch(() => {});
+    }
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get('Origin');
 
@@ -180,6 +188,133 @@ export default {
       } catch (err: any) {
         return jsonError(500, 'INTERNAL_ERROR', err.message || 'Failed to update tier.', origin);
       }
+    }
+
+    // ── MCP SSE transport ──────────────────────────────────────────────────
+    // GET /mcp/sse?api_key=... — establish SSE stream, authenticate via query param
+    if (url.pathname === '/mcp/sse' && request.method === 'GET') {
+      const apiKeyParam = url.searchParams.get('api_key') ?? '';
+      if (!apiKeyParam) {
+        return jsonError(401, 'MISSING_API_KEY', 'api_key query parameter required.', origin);
+      }
+
+      const keyHash = await sha256(apiKeyParam);
+      const keyJson = await env.API_KEYS.get(keyHash);
+      if (!keyJson) {
+        return jsonError(401, 'INVALID_API_KEY', 'API key not recognised.', origin);
+      }
+      const keyRecord: ApiKeyRecord = JSON.parse(keyJson);
+      if (!keyRecord.active) {
+        return jsonError(403, 'KEY_REVOKED', 'API key has been revoked.', origin);
+      }
+
+      const sessionId = crypto.randomUUID();
+      // Store session metadata; TTL 1 hour matches SSE keep-alive window
+      await env.API_KEYS.put(
+        `mcp_session:${sessionId}`,
+        JSON.stringify({ tier: keyRecord.tier, ownerId: keyRecord.ownerId, keyHash }),
+        { expirationTtl: 3600 }
+      );
+
+      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+      const writer = writable.getWriter();
+      const enc = new TextEncoder();
+
+      // SSE: advertise the message endpoint immediately, then poll for replies
+      const ctx = request as unknown as { waitUntil: (p: Promise<unknown>) => void };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (ctx as any).passThroughOnException?.();
+
+      const sseTask = (async () => {
+        try {
+          const endpointEvent = `event: endpoint\ndata: /mcp/message?session=${sessionId}\n\n`;
+          await writer.write(enc.encode(endpointEvent));
+
+          // Poll up to 25 s for a KV message, then send keep-alive and close
+          const deadline = Date.now() + 25_000;
+          while (Date.now() < deadline) {
+            const msg = await env.API_KEYS.get(`mcp_msg:${sessionId}`);
+            if (msg) {
+              await env.API_KEYS.delete(`mcp_msg:${sessionId}`);
+              await writer.write(enc.encode(`data: ${msg}\n\n`));
+              break;
+            }
+            await new Promise(r => setTimeout(r, 500));
+          }
+
+          // Keep-alive comment so the client knows we're still alive
+          await writer.write(enc.encode(': keep-alive\n\n'));
+        } catch { /* stream closed by client */ } finally {
+          await writer.close().catch(() => {});
+        }
+      })();
+
+      // Use waitUntil if available (Workers context)
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (request as any).cf;
+        // In real Worker env the execution context is passed separately; we rely on the
+        // response being streamed — the task runs concurrently with streaming.
+        void sseTask;
+      } catch { void sseTask; }
+
+      return new Response(readable, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+          ...corsHeaders(origin),
+        },
+      });
+    }
+
+    // POST /mcp/message?session=... — bridge client message to SSE stream via KV
+    if (url.pathname === '/mcp/message' && request.method === 'POST') {
+      const sessionId = url.searchParams.get('session') ?? '';
+      if (!sessionId) {
+        return jsonError(400, 'BAD_REQUEST', 'session query parameter required.', origin);
+      }
+
+      const sessionJson = await env.API_KEYS.get(`mcp_session:${sessionId}`);
+      if (!sessionJson) {
+        return jsonError(401, 'INVALID_SESSION', 'Session not found or expired.', origin);
+      }
+      const session = JSON.parse(sessionJson) as { tier: string; ownerId: string; keyHash: string };
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return jsonError(400, 'BAD_REQUEST', 'Invalid JSON body.', origin);
+      }
+
+      // Forward to Gateway MCP handler
+      const gatewayUrl = env.GATEWAY_URL.replace(/\/$/, '') + '/api/v1/mcp';
+      let gatewayResp: Response;
+      try {
+        gatewayResp = await fetch(gatewayUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-ArbiSim-Tier': session.tier,
+            'X-ArbiSim-Owner': session.ownerId,
+            'X-ArbiSim-Key-Hash': session.keyHash.slice(0, 8),
+          },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        return jsonError(502, 'GATEWAY_ERROR', 'Simulation engine unreachable.', origin);
+      }
+
+      const responseText = await gatewayResp.text();
+      // Publish response to KV so the SSE stream picks it up
+      await env.API_KEYS.put(`mcp_msg:${sessionId}`, responseText, { expirationTtl: 60 });
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+      });
     }
 
     const rawKey =

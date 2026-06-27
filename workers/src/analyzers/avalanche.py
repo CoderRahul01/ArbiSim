@@ -163,7 +163,8 @@ class AvalancheAnalyzer(ChainAnalyzer):
             "erc8004_payee": payee,
             "erc8004_reputation_score": reputation_score,
             "erc8004_is_registered": is_registered,
-            "low_agent_reputation": low_reputation,
+            "low_agent_reputation": low_reputation,  # read by chain_registry._build_flags
+            "erc8004_is_registered": is_registered,  # drives FLAG_UNKNOWN_AGENT
             "x402_payment_risk": x402_risk,
         }
 

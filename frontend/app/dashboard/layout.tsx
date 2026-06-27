@@ -34,6 +34,16 @@ const NAV_ITEMS = [
     badge: 'live',
   },
   {
+    href: '/dashboard/studio',
+    label: 'Studio',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="1" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M5 14h6M8 11v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/logs',
     label: 'Logs',
     icon: (

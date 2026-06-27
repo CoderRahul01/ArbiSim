@@ -56,6 +56,113 @@ function SaveButton({ state, onClick, disabled }: { state: SaveState; onClick: (
   );
 }
 
+function DangerZone({ apiKey }: { apiKey: string }) {
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [revokeLoading, setRevokeLoading] = useState(false);
+  const [revokeMsg, setRevokeMsg] = useState('');
+
+  async function handleRevokeAll() {
+    if (!apiKey) {
+      setRevokeMsg('No API key configured — nothing to revoke.');
+      return;
+    }
+    setRevokeLoading(true);
+    setRevokeMsg('');
+    try {
+      const jwt = localStorage.getItem('arbisim_jwt') ?? '';
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/keys/revoke-all`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (res.ok) {
+        localStorage.removeItem('arbisim_api_key');
+        setRevokeMsg('All keys revoked. Reload the page to generate a new one.');
+      } else {
+        setRevokeMsg('Failed to revoke keys. Try revoking individually from the API Keys page.');
+      }
+    } catch {
+      setRevokeMsg('Network error. Try revoking individually from the API Keys page.');
+    } finally {
+      setRevokeLoading(false);
+      setConfirmRevoke(false);
+    }
+  }
+
+  return (
+    <div className="mt-6 rounded-xl border border-danger/20 bg-danger/5 p-6">
+      <h3 className="text-sm font-semibold text-text-primary mb-1">Danger zone</h3>
+      <p className="text-xs text-text-secondary mb-4">Irreversible actions. Proceed with care.</p>
+      {revokeMsg && (
+        <div className="mb-3 px-3 py-2 rounded-lg border border-border bg-surface text-xs text-text-secondary font-mono">
+          {revokeMsg}
+        </div>
+      )}
+      <div className="flex items-center justify-between py-3 border-t border-danger/10">
+        <div>
+          <p className="text-xs font-medium text-text-primary">Revoke all API keys</p>
+          <p className="text-xs text-text-tertiary">Immediately invalidates every active key on your account.</p>
+        </div>
+        {confirmRevoke ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setConfirmRevoke(false)}
+              className="px-3 py-1.5 text-xs border border-border rounded-lg text-text-secondary hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleRevokeAll}
+              disabled={revokeLoading}
+              className="px-3 py-1.5 text-xs rounded-lg bg-danger text-white hover:bg-danger/90 transition-colors disabled:opacity-60"
+            >
+              {revokeLoading ? 'Revoking…' : 'Revoke all'}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmRevoke(true)}
+            className="px-3 py-1.5 rounded border border-danger/30 text-danger text-xs font-medium hover:bg-danger/10 transition-colors"
+          >
+            Revoke all
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SecretReveal({ secret }: { secret: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(secret).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <div className="rounded-lg border border-teal/30 bg-teal/5 p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="w-2 h-2 rounded-full bg-teal animate-pulse" />
+        <span className="text-xs font-semibold text-text-primary">Webhook registered</span>
+      </div>
+      <p className="text-[10px] text-text-tertiary mb-3">Copy your signing secret now — it will not be shown again.</p>
+      <div className="flex items-center gap-3 px-3 py-2 rounded border border-border bg-surface font-mono text-xs text-text-primary">
+        <span className="flex-1 break-all">{secret}</span>
+        <button
+          onClick={copy}
+          className={`text-[10px] px-2 py-1 border rounded shrink-0 transition-all ${
+            copied
+              ? 'border-teal/30 bg-teal/10 text-teal'
+              : 'border-border bg-elevated text-text-tertiary hover:text-text-primary'
+          }`}
+        >
+          {copied ? '✓' : 'copy'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [apiKey, setApiKey] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -70,6 +177,9 @@ export default function SettingsPage() {
   const [profileSave, setProfileSave] = useState<SaveState>('idle');
   const [prefSave, setPrefSave] = useState<SaveState>('idle');
   const [webhookSave, setWebhookSave] = useState<SaveState>('idle');
+  const [webhookError, setWebhookError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Load API key and Webhook config on mount
   useEffect(() => {
@@ -133,12 +243,13 @@ export default function SettingsPage() {
   }
 
   const handleSaveWebhook = async () => {
+    setWebhookError('');
     if (!apiKey) {
-      alert('Configure your API key in the API Keys section first.');
+      setWebhookError('Configure your API key in the API Keys section first.');
       return;
     }
     if (!webhookUrl.trim() || !webhookUrl.startsWith('http')) {
-      alert('Please enter a valid HTTP or HTTPS URL.');
+      setWebhookError('Enter a valid HTTP or HTTPS URL.');
       return;
     }
 
@@ -154,7 +265,7 @@ export default function SettingsPage() {
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as { id: string; url: string; secret: string };
         setWebhookId(data.id);
         setWebhookUrl(data.url);
         setJustCreatedSecret(data.secret);
@@ -162,19 +273,20 @@ export default function SettingsPage() {
         setTimeout(() => setWebhookSave('idle'), 2000);
       } else {
         setWebhookSave('idle');
-        const err = await res.json().catch(() => ({}));
-        alert(err?.error?.message ?? 'Failed to save webhook.');
+        const err = await res.json().catch(() => ({}) as Record<string, unknown>);
+        const errMsg = (err as { error?: { message?: string } })?.error?.message;
+        setWebhookError(errMsg ?? 'Failed to save webhook.');
       }
-    } catch (err) {
+    } catch {
       setWebhookSave('idle');
-      alert('Failed to save webhook.');
+      setWebhookError('Network error — could not reach the gateway.');
     }
   };
 
   const handleRemoveWebhook = async () => {
     if (!apiKey || !webhookId) return;
-    if (!confirm('Are you sure you want to deactivate and remove this webhook endpoint?')) return;
-
+    setDeleteLoading(true);
+    setWebhookError('');
     try {
       const res = await fetch(`${CF_WORKER_URL}/api/v1/webhooks/${webhookId}`, {
         method: 'DELETE',
@@ -185,12 +297,14 @@ export default function SettingsPage() {
         setWebhookId(null);
         setWebhookUrl('');
         setJustCreatedSecret(null);
-        alert('Webhook removed successfully.');
+        setConfirmDelete(false);
       } else {
-        alert('Failed to remove webhook.');
+        setWebhookError('Failed to remove webhook. Try again.');
       }
-    } catch (err) {
-      alert('Failed to remove webhook.');
+    } catch {
+      setWebhookError('Network error — could not reach the gateway.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -266,26 +380,14 @@ export default function SettingsPage() {
             <Section
               title="Webhook endpoint"
               description="Receive simulation results as webhook events instead of polling. HMAC-SHA256 signed with your secret.">
-              
+
               {justCreatedSecret && (
-                <div className="rounded-lg border border-teal/30 bg-teal/5 p-4 mb-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="w-2 h-2 rounded-full bg-teal animate-pulse" />
-                    <span className="text-xs font-semibold text-text-primary">Webhook registered successfully</span>
-                  </div>
-                  <p className="text-[10px] text-text-tertiary mb-3">Copy your signing secret. It will not be shown again.</p>
-                  <div className="flex items-center gap-3 px-3 py-2 rounded border border-border bg-surface font-mono text-xs text-text-primary">
-                    <span className="flex-1 break-all">{justCreatedSecret}</span>
-                    <button 
-                      onClick={() => {
-                        navigator.clipboard.writeText(justCreatedSecret);
-                        alert('Secret copied to clipboard');
-                      }}
-                      className="text-[10px] px-2 py-1 border border-border bg-elevated text-text-tertiary rounded hover:text-text-primary transition-colors"
-                    >
-                      copy
-                    </button>
-                  </div>
+                <SecretReveal secret={justCreatedSecret} />
+              )}
+
+              {webhookError && (
+                <div className="rounded-lg border border-red-800/30 bg-red-950/20 px-4 py-3 text-xs text-red-400 font-mono">
+                  {webhookError}
                 </div>
               )}
 
@@ -293,7 +395,7 @@ export default function SettingsPage() {
                 <input
                   type="url"
                   value={webhookUrl}
-                  onChange={e => setWebhookUrl(e.target.value)}
+                  onChange={e => { setWebhookUrl(e.target.value); setWebhookError(''); }}
                   placeholder="https://your-agent.example.com/hooks/arbisim"
                   disabled={webhookId !== null}
                   className={`w-full px-4 py-2.5 rounded-lg border border-border bg-elevated text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-coral/50 transition-colors ${
@@ -301,7 +403,7 @@ export default function SettingsPage() {
                   }`}
                 />
               </Field>
-              
+
               <Field label="Signing secret" hint="Used to verify the X-ArbiSim-Signature header on incoming payloads.">
                 <input
                   type="password"
@@ -314,12 +416,31 @@ export default function SettingsPage() {
 
               <div className="flex justify-end gap-3">
                 {webhookId !== null ? (
-                  <button
-                    onClick={handleRemoveWebhook}
-                    className="px-4 py-2 border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10 rounded-lg text-xs font-medium transition-all duration-200 active:scale-[0.98]"
-                  >
-                    Remove Webhook
-                  </button>
+                  confirmDelete ? (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-text-tertiary">Remove this webhook?</span>
+                      <button
+                        onClick={() => setConfirmDelete(false)}
+                        className="px-3 py-1.5 border border-border rounded-lg text-xs text-text-secondary hover:text-text-primary transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleRemoveWebhook}
+                        disabled={deleteLoading}
+                        className="px-3 py-1.5 border border-danger/40 bg-danger/8 text-danger hover:bg-danger/15 rounded-lg text-xs font-medium transition-all disabled:opacity-60"
+                      >
+                        {deleteLoading ? 'Removing…' : 'Yes, remove'}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(true)}
+                      className="px-4 py-2 border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10 rounded-lg text-xs font-medium transition-all duration-200 active:scale-[0.98]"
+                    >
+                      Remove Webhook
+                    </button>
+                  )
                 ) : (
                   <SaveButton state={webhookSave} onClick={handleSaveWebhook} />
                 )}
@@ -348,19 +469,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Danger zone */}
-        <div className="mt-6 rounded-xl border border-danger/20 bg-danger/5 p-6">
-          <h3 className="text-sm font-semibold text-text-primary mb-1">Danger zone</h3>
-          <p className="text-xs text-text-secondary mb-4">Irreversible actions. Proceed with care.</p>
-          <div className="flex items-center justify-between py-3 border-t border-danger/10">
-            <div>
-              <p className="text-xs font-medium text-text-primary">Revoke all API keys</p>
-              <p className="text-xs text-text-tertiary">Immediately invalidates every active key on your account.</p>
-            </div>
-            <button className="px-3 py-1.5 rounded border border-danger/30 text-danger text-xs font-medium hover:bg-danger/10 transition-colors">
-              Revoke all
-            </button>
-          </div>
-        </div>
+        <DangerZone apiKey={apiKey} />
       </div>
     </div>
   );

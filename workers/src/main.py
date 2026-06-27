@@ -3,6 +3,7 @@ import json
 import asyncio
 import asyncpg
 import posthog as _posthog
+from aiohttp import web
 from dotenv import load_dotenv
 
 from simulation_engine import AnvilForkInstance
@@ -367,6 +368,22 @@ async def process_job(job: dict) -> None:
             await anvil.stop()
 
 
+async def _ping_handler(request: web.Request) -> web.Response:
+    return web.json_response({"status": "ok"})
+
+
+async def start_ping_server() -> None:
+    app = web.Application()
+    app.router.add_get('/ping', _ping_handler)
+    app.router.add_get('/health', _ping_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv('PING_PORT', os.getenv('PORT', '8080')))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Ping server listening on :{port}")
+
+
 async def main_loop() -> None:
     print("Starting ArbiSim Guard simulation worker daemon...")
     await setup_db_tables()
@@ -394,7 +411,12 @@ async def main_loop() -> None:
 
 
 if __name__ == "__main__":
+    async def _run() -> None:
+        await asyncio.gather(
+            start_ping_server(),
+            main_loop(),
+        )
     try:
-        asyncio.run(main_loop())
+        asyncio.run(_run())
     except KeyboardInterrupt:
         print("\nStopping worker daemon.")

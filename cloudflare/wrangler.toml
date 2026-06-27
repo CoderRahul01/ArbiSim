@@ -10,5 +10,9 @@ RATE_LIMIT_WINDOW_SECONDS = "60"
 binding = "API_KEYS"
 id = "0001dbd5625240c7829984f24d96d1ed"
 
+[triggers]
+crons = ["*/10 * * * *"]
+
 # Set secrets via CLI — never in this file:
 # wrangler secret put GATEWAY_URL
+# wrangler secret put RENDER_WORKER_URL

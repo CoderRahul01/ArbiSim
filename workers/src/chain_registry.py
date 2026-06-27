@@ -1,10 +1,10 @@
 """
 chain_registry.py
-Writes simulation verdicts to SimulationRegistry.sol on the appropriate chain.
+Writes simulation verdicts to SimulationRegistry.sol v2 on the appropriate chain.
 Chain selection is driven by chain_config.py — no addresses are hardcoded here.
 
 Required env vars:
-  REGISTRY_SIGNER_KEY   — private key of the contract owner wallet
+  REGISTRY_SIGNER_KEY   — private key of the reporter wallet
   Per-chain RPC URLs    — resolved via chain_config.py
 """
 
@@ -13,32 +13,47 @@ import asyncio
 import logging
 from web3 import Web3
 
-from chain_config import get_chain_by_id, CHAIN_REGISTRY
+from chain_config import get_chain_by_id
 
 logger = logging.getLogger(__name__)
 
+# ABI for SimulationRegistry.sol v2 logSimulation()
 REGISTRY_ABI = [
     {
         "type": "function",
         "name": "logSimulation",
         "inputs": [
             {"name": "sessionId",    "type": "bytes32"},
-            {"name": "passed",       "type": "bool"},
-            {"name": "gasCostWei",   "type": "uint256"},
+            {"name": "agent",        "type": "address"},
+            {"name": "txHash",       "type": "bytes32"},
+            {"name": "safeToExecute","type": "bool"},
+            {"name": "flagsBitmap",  "type": "uint16"},
+            {"name": "gasEstimate",  "type": "uint64"},
             {"name": "revertReason", "type": "string"},
-            {"name": "flagsBitmap",  "type": "uint8"},
+            {"name": "chainId",      "type": "uint32"},
         ],
         "outputs": [],
         "stateMutability": "nonpayable",
     }
 ]
 
-# Flag bit positions — must match SimulationRegistry.sol constants
-_FLAG_EXECUTION_REVERTED    = 1 << 0
-_FLAG_HIGH_SLIPPAGE         = 1 << 1
-_FLAG_SANDWICH_DETECTED     = 1 << 2
-_FLAG_TIMEBOOST_RECOMMENDED = 1 << 6
-_FLAG_LOW_AGENT_REPUTATION  = 1 << 7
+# Flag bit positions — must match SimulationRegistry.sol v2 FLAG_* constants (uint16)
+_FLAG_REVERT                 = 1 << 0
+_FLAG_HIGH_SLIPPAGE          = 1 << 1
+_FLAG_MEV_RISK               = 1 << 2
+_FLAG_GAS_ESTIMATE_HIGH      = 1 << 3
+_FLAG_LOW_REPUTATION         = 1 << 4
+_FLAG_UNKNOWN_AGENT          = 1 << 5
+_FLAG_PRICE_IMPACT_HIGH      = 1 << 6
+_FLAG_INSUFFICIENT_LIQUIDITY = 1 << 7
+_FLAG_BRIDGE_RISK            = 1 << 8
+_FLAG_ORACLE_MANIPULATION    = 1 << 9
+_FLAG_VALUE_TRANSFER         = 1 << 10
+_FLAG_CONTRACT_CREATION      = 1 << 11
+
+# Mainnet chain IDs
+ARBITRUM_ONE_CHAIN_ID   = 42161
+AVALANCHE_MAINNET_CHAIN_ID = 43114
 
 
 def _uuid_to_bytes32(session_id: str) -> bytes:
@@ -49,8 +64,9 @@ def _uuid_to_bytes32(session_id: str) -> bytes:
 
 def _build_flags(results: dict) -> int:
     flags = 0
+
     if results.get("status") == "REJECTED":
-        flags |= _FLAG_EXECUTION_REVERTED
+        flags |= _FLAG_REVERT
 
     try:
         slippage = float(str(results.get("slippage_detected", "0")).replace("%", ""))
@@ -60,14 +76,36 @@ def _build_flags(results: dict) -> int:
         pass
 
     mev = results.get("timeboost_mev_telemetry") or {}
-    if mev.get("sandwich_risk_detected"):
-        flags |= _FLAG_SANDWICH_DETECTED
-    if mev.get("timeboost_fastlane_recommended"):
-        flags |= _FLAG_TIMEBOOST_RECOMMENDED
+    if mev.get("sandwich_risk_detected") or mev.get("front_run_risk"):
+        flags |= _FLAG_MEV_RISK
+
+    try:
+        gas_used = int(results.get("gas_used") or 0)
+        gas_limit = int(results.get("gas_limit") or 0)
+        if gas_limit and gas_used / gas_limit > 0.9:
+            flags |= _FLAG_GAS_ESTIMATE_HIGH
+    except (ValueError, TypeError, ZeroDivisionError):
+        pass
 
     chain_extras = results.get("chain_extras") or {}
     if chain_extras.get("low_agent_reputation"):
-        flags |= _FLAG_LOW_AGENT_REPUTATION
+        flags |= _FLAG_LOW_REPUTATION
+    if not chain_extras.get("erc8004_is_registered", True):
+        flags |= _FLAG_UNKNOWN_AGENT
+
+    safety = results.get("safety_checks") or {}
+    if safety.get("price_impact_high"):
+        flags |= _FLAG_PRICE_IMPACT_HIGH
+    if safety.get("insufficient_liquidity"):
+        flags |= _FLAG_INSUFFICIENT_LIQUIDITY
+    if safety.get("bridge_risk"):
+        flags |= _FLAG_BRIDGE_RISK
+    if safety.get("oracle_manipulation"):
+        flags |= _FLAG_ORACLE_MANIPULATION
+    if safety.get("value_transfer"):
+        flags |= _FLAG_VALUE_TRANSFER
+    if safety.get("contract_creation"):
+        flags |= _FLAG_CONTRACT_CREATION
 
     return flags
 
@@ -105,12 +143,22 @@ def _sync_log(session_id: str, results: dict, chain_id: int) -> str:
     )
     account = w3.eth.account.from_key(private_key)
 
-    passed = results.get("status") == "APPROVED"
+    safe_to_execute = results.get("status") == "APPROVED"
+
+    # agent: the wallet/agent address from the simulated transaction
+    raw_agent = results.get("agent_address") or results.get("from_address") or "0x" + "0" * 40
+    agent = Web3.to_checksum_address(raw_agent)
+
+    # txHash: simulated tx hash if available, else zero bytes
+    raw_tx_hash = results.get("tx_hash") or ("0x" + "0" * 64)
+    tx_hash_bytes = bytes.fromhex(raw_tx_hash.removeprefix("0x").zfill(64))
+
     try:
-        gas_cost_wei = int(float(results.get("gas_cost_eth", "0")) * 1e18)
+        gas_estimate = min(int(results.get("gas_used") or 0), 2**64 - 1)
     except (ValueError, TypeError):
-        gas_cost_wei = 0
-    revert_reason = results.get("revert_reason") or ""
+        gas_estimate = 0
+
+    revert_reason = (results.get("revert_reason") or "")[:256]
     flags = _build_flags(results)
 
     latest = w3.eth.get_block("latest")
@@ -120,10 +168,13 @@ def _sync_log(session_id: str, results: dict, chain_id: int) -> str:
 
     tx = contract.functions.logSimulation(
         _uuid_to_bytes32(session_id),
-        passed,
-        gas_cost_wei,
-        revert_reason,
+        agent,
+        tx_hash_bytes,
+        safe_to_execute,
         flags,
+        gas_estimate,
+        revert_reason,
+        chain_id,
     ).build_transaction({
         "from":                 account.address,
         "nonce":                w3.eth.get_transaction_count(account.address, "pending"),
@@ -134,27 +185,27 @@ def _sync_log(session_id: str, results: dict, chain_id: int) -> str:
     })
 
     signed = w3.eth.account.sign_transaction(tx, private_key)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+    tx_hash_out = w3.eth.send_raw_transaction(signed.raw_transaction)
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash_out, timeout=60)
 
     if receipt["status"] != 1:
-        raise RuntimeError(f"Registry tx reverted: 0x{tx_hash.hex()}")
+        raise RuntimeError(f"Registry tx reverted: 0x{tx_hash_out.hex()}")
 
-    return f"0x{tx_hash.hex()}"
+    return f"0x{tx_hash_out.hex()}"
 
 
 async def log_simulation_to_chain(session_id: str, results: dict,
-                                   chain_id: int = 421614) -> None:
+                                   chain_id: int = ARBITRUM_ONE_CHAIN_ID) -> None:
     """
     Async wrapper — runs the blocking web3 call in the default executor.
-    Defaults to Arbitrum Sepolia (421614) to preserve existing behaviour.
-    Never raises; logs errors so the worker loop is never interrupted.
+    Defaults to Arbitrum One mainnet. Never raises; logs errors so the
+    worker loop is never interrupted.
     """
     try:
         tx_hash = await asyncio.get_event_loop().run_in_executor(
             None, _sync_log, session_id, results, chain_id
         )
-        print(f"[{session_id}] On-chain registry ✓  tx={tx_hash}")
+        logger.info("[%s] On-chain registry ✓  tx=%s", session_id, tx_hash)
     except EnvironmentError as exc:
         logger.warning("[%s] Registry skipped: %s", session_id, exc)
     except Exception as exc:

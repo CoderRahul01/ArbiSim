@@ -10,30 +10,37 @@ from typing import Optional
 
 @dataclass
 class SimulationFlags:
-    # Universal flags
-    execution_reverted: bool = False
-    high_slippage: bool = False
-    mev_sandwich_risk: bool = False
-    unsafe_allowance: bool = False
-    insufficient_collateral: bool = False
-    # Arbitrum-specific (always False on other chains)
-    stylus_ink_overflow: bool = False
-    timeboost_recommended: bool = False
-    # Avalanche-specific (always False on other chains)
-    low_agent_reputation: bool = False
+    # Bits map 1-to-1 to SimulationRegistry.sol v2 FLAG_* constants (uint16).
+    revert: bool = False                 # FLAG_REVERT                 = 1 << 0
+    high_slippage: bool = False          # FLAG_HIGH_SLIPPAGE          = 1 << 1
+    mev_risk: bool = False               # FLAG_MEV_RISK               = 1 << 2
+    gas_estimate_high: bool = False      # FLAG_GAS_ESTIMATE_HIGH      = 1 << 3
+    low_reputation: bool = False         # FLAG_LOW_REPUTATION         = 1 << 4
+    unknown_agent: bool = False          # FLAG_UNKNOWN_AGENT          = 1 << 5
+    price_impact_high: bool = False      # FLAG_PRICE_IMPACT_HIGH      = 1 << 6
+    insufficient_liquidity: bool = False # FLAG_INSUFFICIENT_LIQUIDITY = 1 << 7
+    bridge_risk: bool = False            # FLAG_BRIDGE_RISK            = 1 << 8
+    oracle_manipulation: bool = False    # FLAG_ORACLE_MANIPULATION    = 1 << 9
+    value_transfer: bool = False         # FLAG_VALUE_TRANSFER         = 1 << 10
+    contract_creation: bool = False      # FLAG_CONTRACT_CREATION      = 1 << 11
+    # Display-only — not written to the contract bitmap
     x402_payment_risk: bool = False
 
     def to_bitmap(self) -> int:
-        """Pack flags into uint8 for SimulationRegistry.sol logSimulation()."""
+        """Pack flags into uint16 for SimulationRegistry.sol v2 logSimulation()."""
         bits = [
-            self.execution_reverted,    # bit 0
-            self.high_slippage,         # bit 1
-            self.mev_sandwich_risk,     # bit 2
-            self.unsafe_allowance,      # bit 3
-            self.stylus_ink_overflow,   # bit 4
-            self.insufficient_collateral,  # bit 5
-            self.timeboost_recommended, # bit 6
-            self.low_agent_reputation,  # bit 7
+            self.revert,                 # bit 0
+            self.high_slippage,          # bit 1
+            self.mev_risk,               # bit 2
+            self.gas_estimate_high,      # bit 3
+            self.low_reputation,         # bit 4
+            self.unknown_agent,          # bit 5
+            self.price_impact_high,      # bit 6
+            self.insufficient_liquidity, # bit 7
+            self.bridge_risk,            # bit 8
+            self.oracle_manipulation,    # bit 9
+            self.value_transfer,         # bit 10
+            self.contract_creation,      # bit 11
         ]
         return sum(int(bit) << i for i, bit in enumerate(bits))
 
