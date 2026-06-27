@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAccount } from 'wagmi';
 import { posthog } from '@/lib/posthog';
 
-const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.rahulpandey-creates.workers.dev';
 
 // ── Chain registry (mirrors gateway/src/chain-config.ts) ──────────────────
 import { SUPPORTED_NETWORKS } from '../../../lib/chains';

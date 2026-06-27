@@ -9,7 +9,7 @@ import { createSIWEConfig, formatMessage } from '@reown/appkit-siwe';
 import { initPostHog, posthog } from '@/lib/posthog';
 
 const queryClient = new QueryClient();
-const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.rahulpandey-creates.workers.dev';
 
 const siweConfig = createSIWEConfig({
   getMessageParams: async () => {

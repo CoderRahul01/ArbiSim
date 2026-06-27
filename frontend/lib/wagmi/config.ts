@@ -6,7 +6,7 @@ export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || 'b56e464e73
 
 export const metadata = {
   name: 'ArbiSim Guard',
-  description: 'Pre-flight simulation API for AI agents on Arbitrum.',
+  description: 'Pre-flight simulation API for AI agents on Arbitrum and Avalanche.',
   url: 'https://arbisim-guard.vercel.app',
   icons: ['https://arbisim-guard.vercel.app/favicon.png'],
 };

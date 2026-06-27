@@ -34,7 +34,7 @@ interface SimFlag {
 
 function LiveTerminal() {
   const lines = [
-    { delay: 0,    text: '$ curl -X POST https://arbisim-proxy.workers.dev/api/v1/simulate \\', dim: false },
+    { delay: 0,    text: '$ curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/simulate \\', dim: false },
     { delay: 100,  text: '     -H "X-API-Key: ask_free_••••••••" \\',                           dim: true  },
     { delay: 200,  text: '     -d \'{"network":"arbitrum-one","agent_address":"0x...","transactions":[...]}\'' , dim: true },
     { delay: 800,  text: '',                                                                      dim: false },

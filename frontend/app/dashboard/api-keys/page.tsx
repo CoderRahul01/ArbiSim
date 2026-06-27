@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { posthog } from '@/lib/posthog';
 
-const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.rahulpandey-creates.workers.dev';
 
 interface ApiKey {
   id: string;

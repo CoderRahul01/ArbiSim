@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+const BASE_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.rahulpandey-creates.workers.dev';
 
 export interface SimulateRequest {
   network: 'arbitrum-one' | 'arbitrum-sepolia' | 'robinhood-chain-testnet';

@@ -5,7 +5,7 @@ import ShareButton from './ShareButton';
 import ViewTracker from './ViewTracker';
 import { SUPPORTED_NETWORKS } from '../../../lib/chains';
 
-const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.workers.dev';
+const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-proxy.rahulpandey-creates.workers.dev';
 
 // Registry addresses per network (server-side env vars, safe in Server Components)
 const REGISTRY_BY_NETWORK: Record<string, string> = {
