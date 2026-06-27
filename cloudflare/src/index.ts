@@ -147,8 +147,9 @@ export default {
       }
     }
 
-    // ── Public NOWPayments Webhook IPN Bypass ──────────────────────────────
-    if (url.pathname === '/api/v1/public/webhooks/nowpayments') {
+    // ── Public Webhook Bypasses (no auth) ─────────────────────────────────
+    if (url.pathname === '/api/v1/public/webhooks/nowpayments' ||
+        url.pathname === '/api/v1/public/webhooks/circle') {
       const targetUrl = env.GATEWAY_URL.replace(/\/$/, '') + url.pathname + url.search;
       const proxyReq = new Request(targetUrl, {
         method: request.method,
