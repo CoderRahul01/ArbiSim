@@ -378,7 +378,7 @@ async def start_ping_server() -> None:
     app.router.add_get('/health', _ping_handler)
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.getenv('PING_PORT', os.getenv('PORT', '8080')))
+    port = int(os.getenv('PING_PORT', '8081'))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     print(f"Ping server listening on :{port}")

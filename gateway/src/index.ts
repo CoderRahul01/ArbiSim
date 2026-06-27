@@ -35,6 +35,10 @@ const port = config.gateway.port;
 
 app.use(express.json());
 
+// Health / warm-up endpoint (no auth)
+app.get('/ping', (_req, res) => res.json({ status: 'ok' }));
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
 // Public simulation permalink routes (no auth)
 app.use('/api/v1/sim', publicRouter);
 

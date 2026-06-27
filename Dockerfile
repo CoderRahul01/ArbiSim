@@ -32,18 +32,14 @@ WORKDIR /app/workers
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Create a startup script to run both processes
+# Express gateway uses Render's PORT env var; aiohttp worker uses PING_PORT (internal only)
 WORKDIR /app
-RUN echo '#!/bin/bash\n\
-echo "Starting Express Gateway on port 3001..."\n\
-cd /app/gateway && PORT=3001 npm start & \n\
-echo "Starting Python Background Worker..."\n\
-cd /app/workers && python3 src/main.py\n\
-' > /app/start.sh
+RUN printf '#!/bin/bash\nset -e\necho "Starting Express Gateway on port ${PORT:-3001}..."\ncd /app/gateway && npm start &\necho "Starting Python Background Worker..."\ncd /app/workers && PING_PORT=8081 python3 src/main.py\n' > /app/start.sh
 
 RUN chmod +x /app/start.sh
 
-# Expose the gateway port
-EXPOSE 3001
+# Render routes external traffic to PORT; Express gateway must listen on it
+EXPOSE 10000
 
 # Run both the gateway and the worker
 CMD ["/app/start.sh"]
