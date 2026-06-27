@@ -23,34 +23,49 @@ const router = Router();
 router.post('/circle', async (req: Request, res: Response): Promise<void> => {
   try {
     const body = req.body as {
-      clientId?: string;
-      notificationType?: string;
+      // Circle gateway.deposit.finalized event format
+      Type?: string;
+      notification?: {
+        depositId?: string;
+        depositAddress?: string;
+        idempotencyKey?: string;
+        amount?: string;
+        currency?: string;
+        status?: string;
+      };
+      // Fallback: legacy payments format
       payment?: {
         id: string;
         status: string;
         amount?: { amount: string; currency: string };
-        source?: { type: string };
         idempotencyKey?: string;
       };
     };
 
-    // Only process completed (paid) payments - return 200 for all other events
-    // including Circle's verification ping which has no payment body
+    // Return 200 for verification pings and unrelated events
+    const notification = body.notification;
     const payment = body.payment;
-    if (!payment || payment.status !== 'paid') {
+    const eventType = body.Type ?? '';
+
+    const isDepositEvent = eventType === 'gateway.deposit.finalized' && notification;
+    const isPaymentEvent = payment && payment.status === 'paid';
+
+    if (!isDepositEvent && !isPaymentEvent) {
       res.json({ ok: true });
       return;
     }
 
-    // Validate shared secret only for actual payment events
+    // Validate shared secret only for actual payment/deposit events
     const secret = req.headers['x-circle-webhook-secret'] as string | undefined;
     if (!verifyCircleWebhookSecret(secret ?? '')) {
       res.status(401).json({ error: 'Invalid webhook secret' });
       return;
     }
 
-    const paymentId = payment.id;
-    const idempotencyKey = payment.idempotencyKey;
+    // Extract fields from whichever event type fired
+    const paymentId = isDepositEvent ? (notification!.depositId ?? '') : payment!.id;
+    const idempotencyKey = isDepositEvent ? notification!.idempotencyKey : payment!.idempotencyKey;
+    const amountRaw = isDepositEvent ? (notification!.amount ?? '0') : (payment!.amount?.amount ?? '0');
 
     if (!idempotencyKey) {
       console.error('Circle Webhook: Missing idempotencyKey');
@@ -58,12 +73,12 @@ router.post('/circle', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    console.log(`Circle Webhook: Payment ${paymentId} paid - key: ${idempotencyKey}`);
+    console.log(`Circle Webhook: ${eventType || 'payment'} ${paymentId} - key: ${idempotencyKey}`);
 
     // Dedup guard - same logic as NOWPayments
     const alreadyProcessed = await isPaymentVerified(paymentId);
     if (alreadyProcessed) {
-      console.log(`Circle Webhook: Payment ${paymentId} already processed - skipping`);
+      console.log(`Circle Webhook: ${paymentId} already processed - skipping`);
       res.json({ ok: true });
       return;
     }
@@ -79,7 +94,7 @@ router.post('/circle', async (req: Request, res: Response): Promise<void> => {
     const walletAddress = parts[1].toLowerCase();
     const packId = parts[2];
     const credits = CREDIT_PACKS[packId];
-    const amountUsd = payment.amount?.amount ?? '0';
+    const amountUsd = amountRaw;
 
     if (!credits) {
       console.error(`Circle Webhook: Unknown pack ${packId}`);
