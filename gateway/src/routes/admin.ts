@@ -413,6 +413,51 @@ router.post('/credit-checkout', async (req: Request, res: Response): Promise<voi
 });
 
 /**
+ * POST /admin/circle-credit-checkout
+ * Creates a Circle USDC payment intent for a credit pack purchase.
+ * Returns a USDC deposit address on Arbitrum - no redirect needed.
+ */
+router.post('/circle-credit-checkout', async (req: Request, res: Response): Promise<void> => {
+  const { address, pack } = req.body as { address: string; pack: string };
+  if (!address || !pack) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Missing address or pack.' } });
+    return;
+  }
+  const packConfig = CREDIT_PACKS[pack];
+  if (!packConfig) {
+    res.status(400).json({
+      error: { code: 'INVALID_PACK', message: `Pack must be one of: ${Object.keys(CREDIT_PACKS).join(', ')}` },
+    });
+    return;
+  }
+
+  const idempotencyKey = `credit:${address.toLowerCase()}:${pack}:${Date.now()}`;
+
+  try {
+    const { createCirclePaymentIntent } = await import('../services/circle.js');
+    const intent = await createCirclePaymentIntent({
+      idempotencyKey,
+      amountUsd: packConfig.price_usd,
+      description: `ArbiSim Guard ${packConfig.label}`,
+    });
+
+    const method = intent.paymentMethods?.[0];
+    res.json({
+      success: true,
+      payment_id: intent.id,
+      payment_address: method?.address ?? null,
+      chain: method?.chain ?? 'ARB',
+      amount_usdc: packConfig.price_usd.toFixed(2),
+      credits: packConfig.credits,
+      pack,
+    });
+  } catch (err: any) {
+    console.error('Circle checkout error:', err);
+    res.status(500).json({ error: { code: 'CIRCLE_ERROR', message: err.message || 'Failed to create Circle payment.' } });
+  }
+});
+
+/**
  * POST /admin/referral/create
  * Creates a referral code for the given wallet.
  */

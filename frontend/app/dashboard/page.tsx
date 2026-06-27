@@ -192,7 +192,7 @@ export default function DashboardOverview() {
 
       <div className="flex-1 px-6 md:px-8 py-8 max-w-5xl w-full mx-auto">
 
-        {/* Onboarding banner — shown only when no API key exists yet */}
+        {/* Onboarding banner - shown only when no API key exists yet */}
         {!hasApiKey && (
           <div className="mb-6 flex items-center gap-4 px-5 py-4 rounded-xl border border-coral/30 bg-coral/5 animate-slide-up">
             <div className="w-8 h-8 rounded-lg bg-coral/10 border border-coral/20 flex items-center justify-center shrink-0 text-coral">
@@ -203,7 +203,7 @@ export default function DashboardOverview() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-text-primary">Complete your setup</p>
-              <p className="text-xs text-text-secondary mt-0.5">Get your API key and MCP config in 2 minutes — no JSON needed.</p>
+              <p className="text-xs text-text-secondary mt-0.5">Get your API key and MCP config in 2 minutes - no JSON needed.</p>
             </div>
             <Link
               href="/setup"

@@ -126,7 +126,9 @@ export default function BillingPage() {
   const [creditHistory, setCreditHistory] = useState<any[]>([]);
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
 
-  const [referralCode, setReferralCode] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'crypto' | 'usdc'>('crypto');
+  const [usdcModal, setUsdcModal] = useState<{ address: string; amount: string; paymentId: string } | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
   const [redeemCode, setRedeemCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [redeemError, setRedeemError] = useState('');
@@ -234,6 +236,37 @@ export default function BillingPage() {
       }
     } catch (err: any) {
       setTxStatus({ type: 'error', message: err.message || 'Credit purchase failed.' });
+      setBuyingPack(null);
+    }
+  }
+
+  async function handleCircleCreditPurchase(packId: string) {
+    const token = localStorage.getItem('arbisim_jwt');
+    if (!token || !address) {
+      setTxStatus({ type: 'error', message: 'Please sign in first.' });
+      return;
+    }
+    setBuyingPack(packId);
+    setTxStatus({ type: 'signing', message: 'Creating USDC payment...' });
+    try {
+      const res = await fetch(`${CF_WORKER_URL}/api/v1/admin/circle-credit-checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': token },
+        body: JSON.stringify({ address, pack: packId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as any;
+        throw new Error(err?.error?.message ?? 'USDC checkout failed.');
+      }
+      const data = await res.json() as { payment_address: string; amount_usdc: string; payment_id: string };
+      if (data.payment_address) {
+        setTxStatus({ type: 'idle' });
+        setUsdcModal({ address: data.payment_address, amount: data.amount_usdc, paymentId: data.payment_id });
+      } else {
+        throw new Error('No payment address returned.');
+      }
+    } catch (err: any) {
+      setTxStatus({ type: 'error', message: err.message || 'USDC payment failed.' });
       setBuyingPack(null);
     }
   }
@@ -389,7 +422,7 @@ export default function BillingPage() {
               </p>
               <div className="flex items-center gap-2 mb-4">
                 <span className="text-lg font-mono font-semibold px-3 py-1.5 bg-elevated border border-border rounded text-text-primary uppercase tracking-wide">
-                  {referralCode || 'Loading...'}
+                  {referralCode ?? <span className="opacity-40 text-base">-</span>}
                 </span>
                 {referralCode && (
                   <button
@@ -482,10 +515,58 @@ export default function BillingPage() {
           </div>
         </div>
 
+        {/* USDC Payment Modal */}
+        {usdcModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="glass rounded-2xl border border-border p-6 max-w-sm w-full mx-4 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-text-primary">Pay with USDC</h3>
+                <button onClick={() => { setUsdcModal(null); setBuyingPack(null); }} className="text-text-tertiary hover:text-text-primary">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 1l14 14M15 1L1 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                </button>
+              </div>
+              <p className="text-xs text-text-secondary mb-4">Send exactly this amount to the address below on <span className="text-text-primary font-medium">Arbitrum One</span>. Credits are added automatically after confirmation.</p>
+              <div className="space-y-3 mb-5">
+                <div className="rounded-lg border border-border bg-elevated p-3">
+                  <p className="text-[10px] text-text-tertiary font-mono uppercase mb-1">Amount (USDC)</p>
+                  <p className="text-xl font-semibold text-text-primary font-mono">{usdcModal.amount}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-elevated p-3">
+                  <p className="text-[10px] text-text-tertiary font-mono uppercase mb-1">Payment address (Arbitrum)</p>
+                  <p className="font-mono text-xs text-text-primary break-all">{usdcModal.address}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { navigator.clipboard.writeText(usdcModal.address); }}
+                className="w-full py-2.5 rounded-lg border border-border text-xs text-text-primary hover:bg-elevated transition-colors">
+                Copy address
+              </button>
+              <p className="text-[10px] text-text-tertiary text-center mt-3">Credits appear within ~2 minutes of on-chain confirmation.</p>
+            </div>
+          </div>
+        )}
+
         {/* Credit Packs */}
         <div>
-          <h2 className="text-sm font-semibold text-text-primary mb-1">Credit Packs</h2>
-          <p className="text-xs text-text-secondary mb-4">Buy prepaid simulation credits. Credits never expire and work across all supported chains.</p>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-text-primary mb-1">Credit Packs</h2>
+              <p className="text-xs text-text-secondary">Buy prepaid simulation credits. Credits never expire and work across all supported chains.</p>
+            </div>
+            <div className="flex items-center gap-1 p-1 rounded-lg border border-border bg-elevated text-xs">
+              <button
+                onClick={() => setPaymentMethod('crypto')}
+                className={`px-3 py-1.5 rounded-md font-medium transition-colors ${paymentMethod === 'crypto' ? 'bg-surface text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}>
+                Crypto
+              </button>
+              <button
+                onClick={() => setPaymentMethod('usdc')}
+                className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${paymentMethod === 'usdc' ? 'bg-surface text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}>
+                <span className="w-2 h-2 rounded-full bg-blue-400" />
+                USDC
+              </button>
+            </div>
+          </div>
           <div className="grid md:grid-cols-3 gap-4">
             {CREDIT_PACKS.map(pack => (
               <div key={pack.id}
@@ -506,13 +587,15 @@ export default function BillingPage() {
                 </div>
                 <button
                   disabled={buyingPack !== null}
-                  onClick={() => handleCreditPurchase(pack.id)}
+                  onClick={() => paymentMethod === 'usdc' ? handleCircleCreditPurchase(pack.id) : handleCreditPurchase(pack.id)}
                   className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-[0.98] disabled:opacity-70 ${
                     pack.highlighted
                       ? 'bg-coral text-white hover:bg-coral-hover shadow-lg shadow-coral/20'
                       : 'border border-border text-text-primary hover:bg-elevated'
                   }`}>
-                  {buyingPack === pack.id ? 'Redirecting...' : `Buy ${pack.credits.toLocaleString()} credits`}
+                  {buyingPack === pack.id
+                    ? (paymentMethod === 'usdc' ? 'Creating...' : 'Redirecting...')
+                    : `Buy ${pack.credits.toLocaleString()} credits`}
                 </button>
               </div>
             ))}

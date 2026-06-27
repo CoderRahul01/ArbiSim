@@ -63,7 +63,7 @@ function DangerZone({ apiKey }: { apiKey: string }) {
 
   async function handleRevokeAll() {
     if (!apiKey) {
-      setRevokeMsg('No API key configured — nothing to revoke.');
+      setRevokeMsg('No API key configured - nothing to revoke.');
       return;
     }
     setRevokeLoading(true);
@@ -145,7 +145,7 @@ function SecretReveal({ secret }: { secret: string }) {
         <span className="w-2 h-2 rounded-full bg-teal animate-pulse" />
         <span className="text-xs font-semibold text-text-primary">Webhook registered</span>
       </div>
-      <p className="text-[10px] text-text-tertiary mb-3">Copy your signing secret now — it will not be shown again.</p>
+      <p className="text-[10px] text-text-tertiary mb-3">Copy your signing secret now - it will not be shown again.</p>
       <div className="flex items-center gap-3 px-3 py-2 rounded border border-border bg-surface font-mono text-xs text-text-primary">
         <span className="flex-1 break-all">{secret}</span>
         <button
@@ -279,7 +279,7 @@ export default function SettingsPage() {
       }
     } catch {
       setWebhookSave('idle');
-      setWebhookError('Network error — could not reach the gateway.');
+      setWebhookError('Network error - could not reach the gateway.');
     }
   };
 
@@ -302,7 +302,7 @@ export default function SettingsPage() {
         setWebhookError('Failed to remove webhook. Try again.');
       }
     } catch {
-      setWebhookError('Network error — could not reach the gateway.');
+      setWebhookError('Network error - could not reach the gateway.');
     } finally {
       setDeleteLoading(false);
     }
@@ -329,8 +329,8 @@ export default function SettingsPage() {
             {/* Profile */}
             <Section
               title="Profile"
-              description="Your display name used for key ownership attribution and support tickets.">
-              <Field label="Display name" hint="Used as the ownerId when creating keys from the dashboard.">
+              description="Your name shown on simulation receipts and API key ownership.">
+              <Field label="Name" hint="Optional - shown on your simulation receipts.">
                 <input
                   type="text"
                   value={displayName}
@@ -447,23 +447,6 @@ export default function SettingsPage() {
               </div>
             </Section>
 
-            {/* Gateway endpoint */}
-            <Section
-              title="Gateway endpoint"
-              description="The backend API your dashboard is pointing at. Change this if you self-host the gateway.">
-              <Field label="Current endpoint">
-                <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-elevated">
-                  <span className="flex-1 font-mono text-sm text-text-secondary truncate">{CF_WORKER_URL}</span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal" />
-                    <span className="text-xs text-teal font-mono">connected</span>
-                  </div>
-                </div>
-              </Field>
-              <p className="text-xs text-text-tertiary">
-                Set via <code className="font-mono text-coral">NEXT_PUBLIC_CF_WORKER_URL</code> in your Vercel environment variables.
-              </p>
-            </Section>
 
           </div>
         </div>

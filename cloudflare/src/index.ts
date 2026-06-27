@@ -136,7 +136,7 @@ export default {
 
         const token = await jwt.sign({
           address: address.toLowerCase(),
-          exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 1 day
+          exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60) // 7 days
         }, env.JWT_SECRET || 'default_dev_secret');
 
         return new Response(JSON.stringify({ token }), {

@@ -25,7 +25,7 @@ const NAV_ITEMS = [
   },
   {
     href: '/dashboard/simulate',
-    label: 'Live Simulation',
+    label: 'Live Sim',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <polygon points="3,2 13,8 3,14" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
@@ -172,7 +172,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
 
     checkAuth();
-    const interval = setInterval(checkAuth, 1000);
+    const interval = setInterval(checkAuth, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -200,7 +200,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  if (!isConnected || !jwt) {
+  if (!jwt) {
     const isOnlyConnected = isConnected && !jwt;
 
     return (

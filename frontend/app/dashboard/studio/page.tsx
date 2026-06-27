@@ -369,7 +369,7 @@ export default function StudioPage() {
   const handleSimulate = useCallback(async () => {
     const cleanKey = apiKey.trim().replace(/[^\x20-\x7E]/g, '');
     if (!cleanKey) {
-      setResult({ status: 'ERROR', error: 'Enter your API key — or visit the API Keys page to get one.' });
+      setResult({ status: 'ERROR', error: 'Enter your API key - or visit the API Keys page to get one.' });
       return;
     }
     if (!fromAddress) {
@@ -432,7 +432,7 @@ export default function StudioPage() {
       <div className="border-b border-border bg-surface/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="px-8 h-14 flex items-center justify-between">
           <span className="text-sm font-medium text-text-primary">Simulation Studio</span>
-          <span className="text-xs text-text-tertiary font-mono">plain-English simulation — no JSON required</span>
+          <span className="text-xs text-text-tertiary font-mono">plain-English simulation - no JSON required</span>
         </div>
       </div>
 
@@ -498,7 +498,7 @@ export default function StudioPage() {
               )}
             </div>
 
-            {/* Value (ETH/AVAX) — not shown for ERC-20 */}
+            {/* Value (ETH/AVAX) - not shown for ERC-20 */}
             {action !== 'erc20_transfer' && action !== 'token_swap' && (
               <div>
                 <Label>Value ({token})</Label>
@@ -639,7 +639,7 @@ export default function StudioPage() {
             </button>
 
             <p className="text-xs text-text-tertiary text-center">
-              No real transaction is submitted — runs against an ephemeral {chain?.displayName} fork.
+              No real transaction is submitted - runs against an ephemeral {chain?.displayName} fork.
             </p>
           </div>
 
@@ -650,7 +650,7 @@ export default function StudioPage() {
                 <div className="w-12 h-12 rounded-xl bg-coral/10 border border-coral/20 flex items-center justify-center text-coral text-2xl">⬡</div>
                 <p className="text-text-primary font-medium">Verdict appears here</p>
                 <p className="text-sm text-text-tertiary max-w-xs">
-                  Fill in the form, hit Simulate — get a ✅ SAFE, ⚠️ WARNING, or ❌ BLOCKED verdict instantly.
+                  Fill in the form, hit Simulate - get a ✅ SAFE, ⚠️ WARNING, or ❌ BLOCKED verdict instantly.
                 </p>
                 <Link
                   href="/dashboard/simulate"
