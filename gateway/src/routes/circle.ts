@@ -21,13 +21,6 @@ const router = Router();
  * Circle sends payment status updates when USDC is received on-chain.
  */
 router.post('/circle', async (req: Request, res: Response): Promise<void> => {
-  // Validate shared secret (Circle webhook key or dev bypass)
-  const secret = req.headers['x-circle-webhook-secret'] as string | undefined;
-  if (!verifyCircleWebhookSecret(secret ?? '')) {
-    res.status(401).json({ error: 'Invalid webhook secret' });
-    return;
-  }
-
   try {
     const body = req.body as {
       clientId?: string;
@@ -41,10 +34,18 @@ router.post('/circle', async (req: Request, res: Response): Promise<void> => {
       };
     };
 
-    // Only process completed (paid) payments
+    // Only process completed (paid) payments - return 200 for all other events
+    // including Circle's verification ping which has no payment body
     const payment = body.payment;
     if (!payment || payment.status !== 'paid') {
       res.json({ ok: true });
+      return;
+    }
+
+    // Validate shared secret only for actual payment events
+    const secret = req.headers['x-circle-webhook-secret'] as string | undefined;
+    if (!verifyCircleWebhookSecret(secret ?? '')) {
+      res.status(401).json({ error: 'Invalid webhook secret' });
       return;
     }
 
