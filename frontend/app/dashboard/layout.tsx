@@ -144,14 +144,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { open } = useAppKit();
   const { disconnect } = useDisconnect();
   const quotaStats = useQuotaStats();
-  const { isConnected } = useAccount();
-  const { disconnect } = useDisconnect();
-  const { open } = useAppKit();
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [jwt, setJwt] = useState<string | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [quotaUsed, setQuotaUsed] = useState(0);
-  const [quotaLimit, setQuotaLimit] = useState(500);
 
   useEffect(() => {
     const checkAuth = () => {
