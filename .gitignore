@@ -66,3 +66,9 @@ cache/
 broadcast/
 frontend/tsconfig.tsbuildinfo
 .vercel
+
+# Cloudflare Wrangler — NEVER commit these
+.wrangler/
+cloudflare/.wrangler/
+*.dev.vars
+wrangler.secrets.toml
