@@ -69,6 +69,105 @@ export default {
       });
     }
 
+    // ── Public no-auth demo endpoint — returns a realistic simulation result ──
+    // Anyone can hit this to see what ArbiSim returns. No API key required.
+    // Used by: docs quickstart, Ava Labs BD demos, Discord showcases.
+    if (url.pathname === '/api/v1/demo' && request.method === 'POST') {
+      let body: Record<string, unknown> = {};
+      try { body = await request.json() as Record<string, unknown>; } catch { /* no body is fine */ }
+
+      const network = (body.network as string) ?? 'avalanche-fuji';
+      const _slippage = Number(body.max_slippage_tolerance ?? 2.0);
+
+      // Deterministic scenario: if network contains 'arbitrum' simulate a sandwich / rejected case.
+      // Everything else gets an APPROVED response so callers can see both outcomes.
+      const isArbitrum = network.toLowerCase().includes('arbitrum');
+      const jobId = crypto.randomUUID();
+      const latencyMs = 180 + Math.floor(Math.random() * 220); // 180–400ms realistic range
+
+      const approvedResult = {
+        job_id: jobId,
+        status: 'APPROVED',
+        network,
+        simulated_at_block: isArbitrum ? 328_419_200 : 48_211_044,
+        latency_ms: latencyMs,
+        checks: {
+          would_revert: false,
+          price_impact_too_high: false,
+          frontrun_detected: false,
+          risky_allowance: false,
+          signature_invalid: false,
+          permission_expired: false,
+          use_priority_lane: false,
+          compute_limit_exceeded: false,
+          untrusted_counterparty: false,
+          payment_unverified: false,
+        },
+        gas: {
+          l2_gas_used: 183_420,
+          total_wei: '210000000000000',
+          fee_avax: '0.00021',
+        },
+        verdict: 'APPROVED — safe to broadcast',
+        _note: 'This is a public demo response. Plug in a real API key at /dashboard to run live simulations.',
+      };
+
+      const rejectedResult = {
+        job_id: jobId,
+        status: 'REJECTED',
+        network,
+        simulated_at_block: 328_419_200,
+        latency_ms: latencyMs,
+        checks: {
+          would_revert: false,
+          price_impact_too_high: true,   // 11.3% detected — exceeds 2% threshold
+          frontrun_detected: true,        // sandwich attack in same block
+          risky_allowance: false,
+          signature_invalid: false,
+          permission_expired: false,
+          use_priority_lane: true,        // Timeboost would help here
+          compute_limit_exceeded: false,
+          untrusted_counterparty: false,
+          payment_unverified: false,
+        },
+        gas: {
+          l2_gas_used: 201_840,
+          total_wei: '231000000000000',
+          fee_eth: '0.000231',
+        },
+        reasons: [
+          'Price impact is 11.3% — your limit is 2.0%. You would receive far fewer tokens than quoted.',
+          'A sandwich bot has positioned two transactions around yours in the same block.',
+          'Using Timeboost priority lane would give your transaction a 200ms speed advantage.',
+        ],
+        verdict: 'REJECTED — abort to protect funds',
+        _note: 'This is a public demo response showing a REJECTED case. Plug in a real API key at /dashboard to simulate your own transactions.',
+      };
+
+      const result = isArbitrum ? rejectedResult : approvedResult;
+
+      return new Response(JSON.stringify(result, null, 2), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+      });
+    }
+
+    // ── Sandbox: GET /api/v1/demo returns a curl example + both scenarios ────
+    if (url.pathname === '/api/v1/demo' && request.method === 'GET') {
+      const example = {
+        message: 'ArbiSim Guard — public demo endpoint. No API key required.',
+        usage: {
+          approved_example: 'POST /api/v1/demo   {"network":"avalanche-fuji","agent_address":"0x...","transactions":[...]}',
+          rejected_example: 'POST /api/v1/demo   {"network":"arbitrum-one","agent_address":"0x...","transactions":[...]}',
+        },
+        tip: 'Pass network=avalanche-fuji for an APPROVED result. Pass network=arbitrum-one for a REJECTED result with MEV detection.',
+        real_api: 'https://arbisimguard.vercel.app/dashboard — create a free key and run live simulations against mainnet.',
+        docs: 'https://arbisimguard.vercel.app/docs',
+      };
+      return new Response(JSON.stringify(example, null, 2), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+      });
+    }
+
     // ── Public simulation permalink — no auth required ─────────────────────
     if (url.pathname.startsWith('/api/v1/sim/public/')) {
       const targetUrl = env.GATEWAY_URL.replace(/\/$/, '') + url.pathname + url.search;

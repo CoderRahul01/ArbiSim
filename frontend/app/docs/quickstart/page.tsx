@@ -20,13 +20,24 @@ export default function QuickstartPage() {
       <h1 className="text-3xl font-serif font-semibold text-text-primary mb-2">Quickstart</h1>
       <p className="text-text-secondary mb-8 leading-relaxed">Get your first simulation result in under 5 minutes. No blockchain expertise needed. Works on Avalanche Fuji and Arbitrum Sepolia for free.</p>
 
-      <div className="rounded-lg border border-amber/20 bg-amber/5 px-5 py-4 mb-8">
-        <p className="text-amber text-sm font-medium mb-1">Before you start</p>
-        <p className="text-text-secondary text-sm">You need a free API key. Get one instantly from the <Link href="/dashboard" className="text-coral hover:underline">dashboard</Link> — no credit card required.</p>
+
+      <div className="rounded-lg border border-teal/20 bg-teal/5 px-5 py-4 mb-6">
+        <p className="text-teal text-sm font-medium mb-2">⚡ Try it right now — no signup, no API key</p>
+        <p className="text-text-secondary text-sm mb-3">Hit the public demo endpoint. Copy, paste, run. You will get a real-looking simulation response back in under a second.</p>
+        <CodeBlock lang="bash" code={`# APPROVED result (Avalanche Fuji)
+curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/demo \\
+  -H "Content-Type: application/json" \\
+  -d '{"network":"avalanche-fuji","agent_address":"0xYourAgent"}'
+
+# REJECTED result — shows MEV detection (Arbitrum)
+curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/demo \\
+  -H "Content-Type: application/json" \\
+  -d '{"network":"arbitrum-one","agent_address":"0xYourAgent"}'`} />
+        <p className="text-text-tertiary text-xs">This endpoint is public, has no rate limit, and is specifically designed for demos and evaluations. It returns realistic responses based on the network you choose.</p>
       </div>
 
-      <h2 className="text-xl font-semibold text-text-primary mt-8 mb-3">Step 1 — Get a free API key</h2>
-      <p className="text-text-secondary text-sm mb-3">Go to the <Link href="/dashboard/api-keys" className="text-coral hover:underline">API Keys page</Link> and click "Create key". You will get back a key that looks like:</p>
+      <h2 className="text-xl font-semibold text-text-primary mt-10 mb-3">Step 1 — Get a free API key (for live simulations)</h2>
+      <p className="text-text-secondary text-sm mb-3">Go to the <Link href="/dashboard/api-keys" className="text-coral hover:underline">API Keys page</Link> and click &quot;Create key&quot;. You will get back a key that looks like:</p>
       <CodeBlock lang="text" code="ask_free_a1b2_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
       <p className="text-text-tertiary text-xs mb-4">Store this immediately — it is only shown once.</p>
 
