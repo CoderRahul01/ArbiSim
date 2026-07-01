@@ -56,18 +56,18 @@ export default function DocsIntroPage() {
       <h2 className="text-xl font-semibold text-text-primary mt-10 mb-4">Supported chains</h2>
       <div className="flex flex-wrap gap-2 mb-8">
         {[
-          { name: 'Avalanche C-Chain', live: true, featured: true },
           { name: 'Avalanche Fuji (testnet)', live: true, featured: true },
-          { name: 'Arbitrum One', live: true, featured: false },
           { name: 'Arbitrum Sepolia (testnet)', live: true, featured: false },
+          { name: 'Avalanche C-Chain', live: false, featured: false },
+          { name: 'Arbitrum One', live: false, featured: false },
           { name: 'Base, Polygon, BNB', live: false, featured: false },
         ].map(c => (
           <span key={c.name} className={`text-xs font-mono px-3 py-1.5 rounded-full border ${
-            c.featured ? 'border-red-500/40 bg-red-500/5 text-red-400' :
+            c.featured ? 'border-teal/40 bg-teal/5 text-teal' :
             c.live ? 'border-teal/30 bg-teal/5 text-teal' :
             'border-border text-text-tertiary'
           }`}>
-            {c.featured ? '🔴 ' : c.live ? '✓ ' : '○ '}{c.name}
+            {c.live ? '✓ ' : '○ '}{c.name}{!c.live && c.name !== 'Base, Polygon, BNB' ? ' (soon)' : ''}
           </span>
         ))}
       </div>

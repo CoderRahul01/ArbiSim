@@ -36,7 +36,7 @@ function LiveTerminal() {
   const lines = [
     { delay: 0,    text: '$ curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/simulate \\', dim: false },
     { delay: 100,  text: '     -H "X-API-Key: ask_free_••••••••" \\',                           dim: true  },
-    { delay: 200,  text: '     -d \'{"network":"avalanche-mainnet","agent_address":"0x...","transactions":[...]}\'', dim: true },
+    { delay: 200,  text: '     -d \'{"network":"avalanche-fuji","agent_address":"0x...","transactions":[...]}\'', dim: true },
     { delay: 800,  text: '',                                                                      dim: false },
     { delay: 900,  text: '# Safety report back in 340ms — no real money moved',                  dim: true  },
     { delay: 1000, text: '{',                                                                     dim: false },
@@ -256,9 +256,9 @@ export default function HomePage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse-dot" />
                 Supported by Ava Labs · Retro9000
               </div>
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-coral/30 bg-coral/5 text-xs text-coral font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-coral animate-pulse-dot" />
-                Live on mainnet · Avalanche + Arbitrum
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-amber/30 bg-amber/5 text-xs text-amber font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse-dot" />
+                Testnet live · Mainnet coming soon
               </div>
             </div>
             <h1 className="font-serif text-display text-text-primary leading-[1.05] mb-3 tracking-[-0.02em]">
@@ -274,17 +274,17 @@ export default function HomePage() {
             </p>
             <div className="flex flex-wrap gap-1.5 mb-8">
               {[
-                { label: '🔴 Avalanche C-Chain', highlight: true },
-                { label: '🔴 Avalanche Fuji', highlight: true },
-                { label: 'Arbitrum One', highlight: false },
-                { label: 'Arbitrum Sepolia', highlight: false },
+                { label: '🟢 Avalanche Fuji', live: true },
+                { label: '🟢 Arbitrum Sepolia', live: true },
+                { label: 'Avalanche C-Chain', live: false },
+                { label: 'Arbitrum One', live: false },
               ].map(chain => (
                 <span key={chain.label} className={`text-xs font-mono px-2.5 py-1 rounded-full border bg-surface ${
-                  chain.highlight
-                    ? 'border-red-500/40 text-red-400'
+                  chain.live
+                    ? 'border-teal/40 text-teal'
                     : 'border-border text-text-tertiary'
                 }`}>
-                  {chain.label}
+                  {chain.label}{!chain.live && <span className="ml-1 text-text-tertiary/50">(soon)</span>}
                 </span>
               ))}
             </div>
@@ -301,7 +301,7 @@ export default function HomePage() {
               {[
                 { value: '< 400ms', label: 'response time'    },
                 { value: '10',      label: 'things it checks' },
-                { value: '4',       label: 'chains live now'  },
+                { value: '2',       label: 'testnets live now'},
                 { value: 'free',    label: 'to get started'   },
               ].map(s => (
                 <div key={s.label}>
@@ -444,15 +444,13 @@ export default function HomePage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {[
-                  { feature: 'AI agent-native (MCP tool)',  arbisim: true,  tenderly: false, blowfish: false, manual: false },
-                  { feature: 'ERC-4337 UserOp validation',  arbisim: true,  tenderly: false, blowfish: true,  manual: false },
-                  { feature: 'MEV sandwich detection',       arbisim: true,  tenderly: false, blowfish: true,  manual: false },
-                  { feature: 'Timeboost premium calc',       arbisim: true,  tenderly: false, blowfish: false, manual: false },
-                  { feature: 'ERC-8004 agent reputation',    arbisim: true,  tenderly: false, blowfish: false, manual: false },
-                  { feature: 'Stylus WASM ink tracking',     arbisim: true,  tenderly: false, blowfish: false, manual: false },
-                  { feature: 'Multi-chain (Arb + Avax)',     arbisim: true,  tenderly: true,  blowfish: true,  manual: true  },
-                  { feature: 'Sub-400ms latency',            arbisim: true,  tenderly: false, blowfish: true,  manual: false },
-                  { feature: 'Free tier',                    arbisim: true,  tenderly: true,  blowfish: false, manual: true  },
+                  { feature: 'AI agent-native (MCP tool)',       arbisim: true,  tenderly: false, blowfish: false, manual: false },
+                  { feature: 'MEV sandwich detection',            arbisim: true,  tenderly: false, blowfish: true,  manual: false },
+                  { feature: 'Pre-broadcast simulation',          arbisim: true,  tenderly: true,  blowfish: false, manual: false },
+                  { feature: 'Plain-English verdict + reasons',   arbisim: true,  tenderly: false, blowfish: false, manual: false },
+                  { feature: 'Sub-400ms latency',                 arbisim: true,  tenderly: false, blowfish: true,  manual: false },
+                  { feature: 'Testnet support (Fuji + Sepolia)',  arbisim: true,  tenderly: true,  blowfish: true,  manual: true  },
+                  { feature: 'Free tier',                         arbisim: true,  tenderly: true,  blowfish: false, manual: true  },
                 ].map(row => (
                   <tr key={row.feature} className="hover:bg-elevated/50 transition-colors">
                     <td className="px-5 py-3 text-text-primary font-medium">{row.feature}</td>
@@ -534,14 +532,14 @@ x402_preflight({
           </div>
           <div className="grid md:grid-cols-3 gap-4 mt-6">
             {[
-              { name: 'Vibekit', desc: 'Built-in support for the Avalanche and Arbitrum ecosystem — GMX, Camelot, Aave, Pendle. ArbiSim is a native safety layer.', badge: 'Native' },
-              { name: 'Eliza', desc: 'Drop in the ArbiSim MCP plugin to any Eliza agent. It will automatically check transactions before they execute.', badge: 'Plugin' },
-              { name: 'LangGraph', desc: 'Add ArbiSim as a tool node in your LangGraph graph. The agent calls it, gets the verdict, and decides whether to proceed.', badge: 'Adapter' },
+              { name: 'Vibekit', desc: 'Integration documented. Designed to work with the Avalanche agent ecosystem — GMX, Camelot, Aave, TraderJoe.', badge: 'Documented' },
+              { name: 'Eliza', desc: 'Integration documented. Add the ArbiSim MCP server config to any Eliza agent and it can call preflight_simulate.', badge: 'Documented' },
+              { name: 'LangGraph', desc: 'REST API works with any Python or TypeScript graph. Add ArbiSim as a tool node between planning and execution.', badge: 'REST API' },
             ].map(fw => (
               <div key={fw.name} className="rounded-lg border border-border bg-surface/50 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-sm font-semibold text-text-primary">{fw.name}</span>
-                  <span className="text-xs font-mono text-teal bg-teal/10 border border-teal/20 px-1.5 py-0.5 rounded">{fw.badge}</span>
+                  <span className="text-xs font-mono text-amber bg-amber/10 border border-amber/20 px-1.5 py-0.5 rounded">{fw.badge}</span>
                 </div>
                 <p className="text-xs text-text-secondary leading-relaxed">{fw.desc}</p>
               </div>
@@ -572,13 +570,13 @@ x402_preflight({
           <p className="text-text-secondary mb-12">Flat monthly pricing. One prevented bad transaction pays for the entire year.</p>
           <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto items-stretch">
             <PricingCard tier="Free" price="$0" limit="500 simulations / month"
-              features={['All 8 safety flags', 'Gas breakdown (L1 + L2)', 'MEV sandwich scoring', 'MCP tool support', 'Community support']}
+              features={['All 10 safety checks', 'Gas breakdown', 'MEV sandwich detection', 'MCP tool support', 'Community support']}
               cta="Get free API key" href="/dashboard" />
             <PricingCard tier="Pro" price="$29" limit="10,000 simulations / month" highlighted
-              features={['Everything in Free', 'ERC-4337 UserOp validation', 'Timeboost premium calc', 'Stylus WASM ink metrics', 'Email support']}
+              features={['Everything in Free', 'Priority queue', 'Webhook callbacks', 'Usage analytics', 'Email support']}
               cta="Start building" href="/dashboard/billing" />
-            <PricingCard tier="Enterprise" price="$299" limit="100,000 simulations / month"
-              features={['Everything in Pro', 'SLA guarantee', 'Custom rate limits', 'Webhook callbacks', 'Dedicated support']}
+            <PricingCard tier="Enterprise" price="Custom" limit="Unlimited simulations"
+              features={['Everything in Pro', 'Dedicated infra', 'Custom rate limits', 'SLA', 'Direct support']}
               cta="Contact us" href="mailto:hello@arbisimguard.com" />
           </div>
         </div>
@@ -591,7 +589,7 @@ x402_preflight({
             Your agents are moving money.<br />Make sure they're doing it safely.
           </h2>
           <p className="text-text-secondary mb-8">
-            Free to start. Works on Avalanche and Arbitrum today. Setup takes under 5 minutes.
+            Free to start. Works on Avalanche Fuji and Arbitrum Sepolia today. Mainnet coming soon. Setup takes under 5 minutes.
           </p>
           {submitted ? (
             <div className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-teal/10 border border-teal/30 text-teal animate-fade-in">

@@ -20,13 +20,13 @@ export default function ChainsPage() {
           <span className="text-xs font-mono px-2.5 py-1 rounded-full border border-red-500/30 text-red-400">Featured chain</span>
         </div>
         <div className="px-5 py-4 space-y-4">
-          <p className="text-text-secondary text-sm leading-relaxed">Avalanche C-Chain is a fully EVM-compatible chain with sub-second finality and low fees. ArbiSim Guard has priority support for Avalanche, with dedicated RPC access provided by Ava Labs through the Retro9000 ecosystem grant program.</p>
+          <p className="text-text-secondary text-sm leading-relaxed">Avalanche C-Chain is a fully EVM-compatible chain with sub-second finality and low fees. ArbiSim Guard has priority support for Avalanche. Fuji testnet is live now. Mainnet support is coming once the audit is complete.</p>
           <div className="grid sm:grid-cols-2 gap-3">
             {[
-              { label: 'Mainnet network ID', value: '"avalanche-mainnet"' },
               { label: 'Testnet network ID', value: '"avalanche-fuji"' },
-              { label: 'Chain ID', value: '43114 (mainnet) / 43113 (Fuji)' },
-              { label: 'Status', value: '✓ Live' },
+              { label: 'Mainnet network ID', value: '"avalanche-mainnet" (coming soon)' },
+              { label: 'Fuji Chain ID', value: '43113' },
+              { label: 'Status', value: '✓ Fuji testnet live' },
             ].map(item => (
               <div key={item.label} className="flex justify-between items-center py-2 border-b border-border/50">
                 <span className="text-text-tertiary text-xs">{item.label}</span>
@@ -44,9 +44,8 @@ export default function ChainsPage() {
 }`}</pre>
           </div>
           <div className="text-xs text-text-tertiary space-y-1">
-            <p>🔴 Avalanche has native support for TraderJoe, Pangolin, Benqi, and Aave v3 pool addresses pre-configured.</p>
-            <p>🔴 Chainlink data feeds are monitored for AVAX/USD price and sequencer uptime on Avalanche.</p>
-            <p>🔴 <a href="https://retro9000.avax.network" target="_blank" rel="noopener noreferrer" className="text-coral hover:underline">Retro9000 grant program ↗</a></p>
+            <p>TraderJoe, Pangolin, Benqi, and Aave v3 pool addresses are pre-configured for Avalanche.</p>
+            <p><a href="https://retro9000.avax.network" target="_blank" rel="noopener noreferrer" className="text-coral hover:underline">Retro9000 grant program ↗</a></p>
           </div>
         </div>
       </div>
@@ -57,19 +56,18 @@ export default function ChainsPage() {
           <span className="text-lg">🔵</span>
           <div className="flex-1">
             <h2 className="text-text-primary font-semibold">Arbitrum</h2>
-            <p className="text-text-tertiary text-xs font-mono">Arbitrum One + Arbitrum Sepolia testnet</p>
+            <p className="text-text-tertiary text-xs font-mono">Arbitrum Sepolia testnet · Mainnet coming soon</p>
           </div>
-          <span className="text-xs font-mono px-2.5 py-1 rounded-full border border-teal/30 text-teal">Live</span>
+          <span className="text-xs font-mono px-2.5 py-1 rounded-full border border-teal/30 text-teal">Sepolia testnet live</span>
         </div>
         <div className="px-5 py-4 space-y-4">
-          <p className="text-text-secondary text-sm leading-relaxed">Arbitrum One is an L2 rollup on Ethereum with deep DeFi liquidity. ArbiSim Guard supports Arbitrum-specific features including Timeboost (priority fee lane) and Stylus smart contracts (WASM compute budget tracking).</p>
+          <p className="text-text-secondary text-sm leading-relaxed">Arbitrum is an L2 rollup on Ethereum. ArbiSim Guard supports Arbitrum Sepolia testnet today. Mainnet support and Arbitrum-specific features (Timeboost, Stylus) are planned for a future release.</p>
           <div className="grid sm:grid-cols-2 gap-3">
             {[
-              { label: 'Mainnet network ID', value: '"arbitrum-one"' },
               { label: 'Testnet network ID', value: '"arbitrum-sepolia"' },
-              { label: 'Chain ID', value: '42161 (mainnet) / 421614 (Sepolia)' },
-              { label: 'Timeboost', value: '✓ Supported' },
-              { label: 'Stylus (WASM)', value: '✓ Ink tracking' },
+              { label: 'Mainnet network ID', value: '"arbitrum-one" (coming soon)' },
+              { label: 'Sepolia Chain ID', value: '421614' },
+              { label: 'Status', value: '✓ Sepolia testnet live' },
             ].map(item => (
               <div key={item.label} className="flex justify-between items-center py-2 border-b border-border/50">
                 <span className="text-text-tertiary text-xs">{item.label}</span>
