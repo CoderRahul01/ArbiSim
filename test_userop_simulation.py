@@ -64,11 +64,10 @@ async def run_test():
         print(f"Slippage Detected: {results['slippage_detected']}")
         print(f"Revert Reason: {results['revert_reason']}")
         
-        # The simulation should catch the EntryPoint validation revert (e.g. FailedOp)
-        if results['status'] == "REVERT":
+        if results['status'] == "REJECTED":
             print("\nTest SUCCESSFUL! Revert was caught and parsed correctly.")
         else:
-            print(f"\nTest UNEXPECTED (Expected REVERT, got {results['status']}).")
+            print(f"\nTest UNEXPECTED (Expected REJECTED, got {results['status']}).")
             
     except Exception as e:
         print(f"Error during UserOperation integration test: {e}")

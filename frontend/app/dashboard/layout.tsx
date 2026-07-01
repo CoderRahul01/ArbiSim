@@ -92,6 +92,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: '/dashboard/roadmap',
+    label: 'Roadmap & Grants',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M9 1H4a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V6L9 1z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M9 1v5h5M5 9h6M5 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/billing',
     label: 'Billing',
     icon: (

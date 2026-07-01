@@ -59,10 +59,10 @@ async def run_test():
         print(f"Balance Traces count: {len(results['balance_traces'])}")
         print(f"Token Transfers count: {len(results['token_transfers'])}")
         
-        if results['status'] == "SUCCESS":
+        if results['status'] == "APPROVED":
             print("\nTest SUCCESSFUL!")
         else:
-            print(f"\nTest FAILED (Expected SUCCESS, got {results['status']}). Revert reason: {results['revert_reason']}")
+            print(f"\nTest FAILED (Expected APPROVED, got {results['status']}). Revert reason: {results['revert_reason']}")
             
     except Exception as e:
         print(f"Error during integration test: {e}")

@@ -1,0 +1,51 @@
+sequenceDiagram
+    autonumber
+    actor Agent as AI Agent
+    participant CF as Cloudflare Worker
+    participant Node as Node Gateway
+    participant Neon as Neon Postgres
+    participant Py as Python Worker
+    participant Anvil as Ephemeral Anvil Fork
+    participant Arb as Arbitrum Nitro RPC
+    participant Mongo as MongoDB
+
+    Agent->>CF: POST /v1/simulations<br/>X-API-Key: ask_free_…<br/>Idempotency-Key: abc123
+    CF->>CF: KV lookup prefix → tier/limit/used
+    alt over quota
+        CF-->>Agent: 429 problem+json<br/>Retry-After
+    else ok
+        CF->>Node: forward (HTTPS, full key)
+        Node->>Node: validate body (JSON schema)
+        Node->>Neon: BEGIN; INSERT simulation_queue<br/>(PENDING, idempotency_key=abc123); COMMIT
+        Node->>Mongo: insert telemetry skeleton
+        Node-->>CF: 202 { job_id, status:"PENDING" }
+        CF-->>Agent: 202 { job_id, status:"PENDING" }
+
+        loop poll (default 2s interval, jittered)
+            Agent->>CF: GET /v1/simulations/{job_id}
+            CF->>Node: forward
+            Node->>Neon: SELECT status FROM simulations WHERE job_id=$1
+            alt PENDING
+                Node-->>Agent: 200 { status:"PENDING" }
+            else terminal
+                Node->>Mongo: load telemetry
+                Node-->>Agent: 200 { status:"APPROVED"|"REJECTED", telemetry: {...} }
+            end
+        end
+
+        par Worker claim
+            Py->>Neon: SELECT … FOR UPDATE SKIP LOCKED LIMIT 1
+            Neon-->>Py: row (job_id, payload, agent_address)
+            Py->>Neon: UPDATE … SET status='CLAIMED', worker_id, claimed_at, visibility_timeout
+            Py->>Anvil: spawn fork at block.head-1
+            Anvil->>Arb: eth_getBlockByNumber, state snapshots
+            Arb-->>Anvil: state
+            Py->>Neon: UPDATE status='RUNNING'
+            Py->>Anvil: eth_sendTransaction (call only)
+            Anvil-->>Py: trace, logs, gasUsed, status
+            Py->>Py: analytical_brain.analyse(trace, logs)
+            Py->>Mongo: append terminal telemetry
+            Py->>Neon: UPDATE status='APPROVED'|'REJECTED', finished_at
+            Py->>Anvil: kill process, drop temp dir
+        end
+    end

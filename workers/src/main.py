@@ -260,9 +260,11 @@ async def process_job(job: dict) -> None:
     print(f"\n[{session_id}] Processing on {network} (UserOp: {is_user_op})")
 
     anvil = None
+    snapshot_id = None
     try:
         anvil   = AnvilForkInstance(network)
         rpc_url = await anvil.start()
+        snapshot_id = await anvil.take_snapshot()
 
         # ERC-4337 UserOp validation via gateway
         if is_user_op:
@@ -365,6 +367,8 @@ async def process_job(job: dict) -> None:
 
     finally:
         if anvil:
+            if snapshot_id is not None:
+                await anvil.revert_snapshot(snapshot_id)
             await anvil.stop()
 
 

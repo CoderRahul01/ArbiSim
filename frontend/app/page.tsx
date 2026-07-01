@@ -36,20 +36,21 @@ function LiveTerminal() {
   const lines = [
     { delay: 0,    text: '$ curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/simulate \\', dim: false },
     { delay: 100,  text: '     -H "X-API-Key: ask_free_••••••••" \\',                           dim: true  },
-    { delay: 200,  text: '     -d \'{"network":"arbitrum-one","agent_address":"0x...","transactions":[...]}\'' , dim: true },
+    { delay: 200,  text: '     -d \'{"network":"avalanche-mainnet","agent_address":"0x...","transactions":[...]}\'', dim: true },
     { delay: 800,  text: '',                                                                      dim: false },
-    { delay: 900,  text: '# Response - 340ms',                                                   dim: true  },
+    { delay: 900,  text: '# Safety report back in 340ms — no real money moved',                  dim: true  },
     { delay: 1000, text: '{',                                                                     dim: false },
-    { delay: 1100, text: '  "status": "REJECTED",',                                              dim: false },
-    { delay: 1200, text: '  "flags": {',                                                          dim: false },
-    { delay: 1300, text: '    "high_slippage": true,       // 12.4% detected, threshold 2%',     dim: false },
-    { delay: 1400, text: '    "sandwich_detected": true,   // 2 surrounding txs, same block',    dim: false },
-    { delay: 1500, text: '    "execution_reverted": false,',                                      dim: false },
-    { delay: 1600, text: '    "timeboost_recommended": true',                                     dim: false },
-    { delay: 1700, text: '  },',                                                                  dim: false },
-    { delay: 1800, text: '  "gas": { "l2_gas_used": 185420, "l1_buffer": 12800, "total_wei": "213000000000000" },', dim: false },
-    { delay: 1900, text: '  "verdict": "ABORT - capital at risk"',                               dim: false },
-    { delay: 2000, text: '}',                                                                     dim: false },
+    { delay: 1100, text: '  "verdict": "REJECTED",',                                             dim: false },
+    { delay: 1200, text: '  "reason": "Transaction would lose more than expected",',             dim: false },
+    { delay: 1300, text: '  "checks": {',                                                         dim: false },
+    { delay: 1400, text: '    "price_impact_too_high": true,   // 12.4% — your limit is 2%',    dim: false },
+    { delay: 1500, text: '    "frontrun_risk": true,           // another tx sandwiches yours', dim: false },
+    { delay: 1600, text: '    "would_revert": false,',                                            dim: false },
+    { delay: 1700, text: '    "use_priority_lane": true        // saves 200ms on Arbitrum',      dim: false },
+    { delay: 1800, text: '  },',                                                                  dim: false },
+    { delay: 1900, text: '  "gas_cost": "0.00021 AVAX",',                                        dim: false },
+    { delay: 2000, text: '  "action": "ABORT — protect your funds"',                             dim: false },
+    { delay: 2100, text: '}',                                                                     dim: false },
   ];
 
   const [visibleCount, setVisibleCount] = useState(0);
@@ -104,16 +105,16 @@ function LiveTerminal() {
 
 function FlagGrid() {
   const flags: SimFlag[] = [
-    { key: 'execution_reverted',    label: 'Execution revert',      description: 'Transaction would revert on-chain. Capital not spent.',         status: 'danger'  },
-    { key: 'high_slippage',         label: 'High slippage',          description: 'Price impact exceeds threshold. Swap unfavourable.',            status: 'warning' },
-    { key: 'sandwich_detected',     label: 'MEV sandwich',           description: 'Surrounding txs detected. Front/back-run likely.',              status: 'danger'  },
-    { key: 'unsafe_allowance',      label: 'Unsafe allowance',       description: 'Allowance exceeds transaction amount. Revoke risk.',            status: 'warning' },
-    { key: 'sig_failed',            label: 'Signature invalid',      description: 'UserOp sigFailed from EntryPoint. AA20 violation.',             status: 'danger'  },
-    { key: 'valid_until_expired',   label: 'Session key expired',    description: 'validUntil in past. UserOp will be rejected.',                  status: 'danger'  },
-    { key: 'timeboost_recommended', label: 'Timeboost advised',      description: 'Priority lane secures 200ms advantage. Premium shown.',         status: 'warning' },
-    { key: 'stylus_ink_overflow',   label: 'Stylus ink limit',       description: 'WASM execution exceeds ink budget. OOG likely.',                status: 'danger'  },
-    { key: 'low_agent_reputation',  label: 'Low ERC-8004 rep',       description: 'Payee reputation score < 50 or unregistered. Payment risky.',   status: 'danger'  },
-    { key: 'x402_payment_risk',     label: 'x402 payment risk',      description: 'ERC-20 transfer to low-reputation payee. Abort before paying.', status: 'danger'  },
+    { key: 'execution_reverted',    label: 'Transaction would fail',     description: 'The transaction would revert on-chain. Your funds would be safe, but gas would still be wasted. ArbiSim catches this before it costs you.',  status: 'danger'  },
+    { key: 'high_slippage',         label: 'Price impact too high',       description: 'The trade would move the price more than your set limit. You would receive significantly fewer tokens than expected.',                            status: 'warning' },
+    { key: 'sandwich_detected',     label: 'Someone is front-running you', description: 'Two transactions surrounding yours in the same block were detected — a classic MEV sandwich attack. Your trade would be exploited.',             status: 'danger'  },
+    { key: 'unsafe_allowance',      label: 'Risky token permission',      description: 'Your approval gives a contract more access than this transaction needs. Excess allowances can be drained in a future attack.',                    status: 'warning' },
+    { key: 'sig_failed',            label: 'Signature check failed',      description: 'The cryptographic signature for this transaction is invalid. If sent, it would be rejected immediately.',                                           status: 'danger'  },
+    { key: 'valid_until_expired',   label: 'Permission has expired',      description: 'The time-based authorization for this action has passed. The transaction would be refused at the protocol level.',                                  status: 'danger'  },
+    { key: 'timeboost_recommended', label: 'Use the priority lane',       description: 'Paying a small priority fee on Arbitrum would give your transaction a 200ms speed advantage and reduce the chance of being beaten by a bot.',       status: 'warning' },
+    { key: 'stylus_ink_overflow',   label: 'Smart contract hit its limit', description: 'The smart contract being called runs custom code that would exceed its compute budget. The transaction would run out of gas mid-execution.',         status: 'danger'  },
+    { key: 'low_agent_reputation',  label: 'Untrusted counterparty',      description: 'The address you are interacting with has a low or unknown reputation score. Proceeding carries a higher-than-normal risk of loss.',                status: 'danger'  },
+    { key: 'x402_payment_risk',     label: 'Payment destination unknown', description: 'You are about to send a payment to an address that has not been verified. This flag blocks agent-to-agent payments to unverified recipients.',       status: 'danger'  },
   ];
 
   const glyphs: Record<string, React.ReactNode> = {
@@ -234,10 +235,10 @@ export default function HomePage() {
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm text-text-secondary">
             <a href="#how-it-works" className="hover:text-text-primary transition-colors">How it works</a>
-            <a href="#mcp" className="hover:text-text-primary transition-colors">MCP</a>
-            <a href="#flags" className="hover:text-text-primary transition-colors">Safety flags</a>
+            <a href="#flags" className="hover:text-text-primary transition-colors">What it catches</a>
             <a href="#pricing" className="hover:text-text-primary transition-colors">Pricing</a>
-            <a href="https://github.com/rahulpandey187/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
+            <Link href="/docs" className="hover:text-text-primary transition-colors">Docs</Link>
+            <a href="https://github.com/CoderRahul01/ArbiSim" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
           </div>
           <Link href="/dashboard/simulate" className="px-4 py-2 rounded-md bg-coral text-white text-sm font-medium hover:bg-coral/90 transition-all duration-200 active:scale-95 shadow-lg shadow-coral/20">
             Open Dashboard →
@@ -249,47 +250,59 @@ export default function HomePage() {
       <section className="max-w-6xl mx-auto px-6 pt-32 pb-20">
         <div className="grid lg:grid-cols-2 gap-16 items-start">
           <div className="animate-slide-up">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-coral/30 bg-coral/5 text-xs text-coral font-mono mb-6">
-              <span className="w-1.5 h-1.5 rounded-full bg-coral animate-pulse-dot" />
-              Built for Arbitrum Open House London 2026
+            {/* Ava Labs support badge */}
+            <div className="flex flex-wrap gap-2 mb-6">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-red-500/30 bg-red-500/5 text-xs text-red-400 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse-dot" />
+                Supported by Ava Labs · Retro9000
+              </div>
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-coral/30 bg-coral/5 text-xs text-coral font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-coral animate-pulse-dot" />
+                Live on mainnet · Avalanche + Arbitrum
+              </div>
             </div>
             <h1 className="font-serif text-display text-text-primary leading-[1.05] mb-3 tracking-[-0.02em]">
-              Test before you<br />
-              <span className="text-coral italic">transact.</span>
+              Your AI agents move money.<br />
+              <span className="text-coral italic">Make sure they don&apos;t move it wrong.</span>
             </h1>
-            <p className="text-xs font-mono text-text-tertiary mb-6 tracking-wide">
-              Pre-execution safety layer for AI agents on EVM chains
-            </p>
             <p className="text-lg text-text-secondary leading-relaxed mb-4 max-w-md">
-              ArbiSim Guard gives AI agents a pre-execution safety check.
-              Simulate any DeFi transaction in an isolated fork -
-              catch reverts, slippage, MEV, and agent reputation risk before a single wei leaves your wallet.
+              Before any transaction goes through, ArbiSim Guard runs it first — on a copy of the live blockchain.
+              No real money moves. You get back a full safety report in under a second: pass or fail, and exactly why.
             </p>
-            <p className="text-xs font-mono text-text-tertiary mb-6">
-              Live on Arbitrum and Avalanche. Base, BNB, and Polygon coming soon.
+            <p className="text-sm text-text-tertiary mb-6">
+              Works with any AI agent framework. No blockchain expertise required to get started.
             </p>
             <div className="flex flex-wrap gap-1.5 mb-8">
-              {['Arbitrum One', 'Arbitrum Sepolia', 'Avalanche C-Chain', 'Avalanche Fuji'].map(chain => (
-                <span key={chain} className="text-xs font-mono px-2.5 py-1 rounded-full border border-border bg-surface text-text-tertiary">
-                  {chain}
+              {[
+                { label: '🔴 Avalanche C-Chain', highlight: true },
+                { label: '🔴 Avalanche Fuji', highlight: true },
+                { label: 'Arbitrum One', highlight: false },
+                { label: 'Arbitrum Sepolia', highlight: false },
+              ].map(chain => (
+                <span key={chain.label} className={`text-xs font-mono px-2.5 py-1 rounded-full border bg-surface ${
+                  chain.highlight
+                    ? 'border-red-500/40 text-red-400'
+                    : 'border-border text-text-tertiary'
+                }`}>
+                  {chain.label}
                 </span>
               ))}
             </div>
             <div className="flex flex-col sm:flex-row gap-3">
               <Link href="/dashboard/simulate" className="px-6 py-3 bg-coral text-white rounded-lg font-medium text-sm hover:bg-coral/90 transition-all duration-200 active:scale-95 shadow-xl shadow-coral/25 text-center">
-                Open Dashboard
+                Try it free →
               </Link>
-              <a href="#how-it-works"
+              <Link href="/docs"
                 className="px-6 py-3 border border-border text-text-primary rounded-lg font-medium text-sm hover:bg-elevated hover:border-zinc-600 transition-all duration-200 active:scale-95 text-center">
-                Read documentation
-              </a>
+                Read the docs
+              </Link>
             </div>
             <div className="flex gap-8 mt-12 pt-8 border-t border-border">
               {[
-                { value: '< 400ms', label: 'median latency'  },
-                { value: '10',      label: 'safety flags'    },
-                { value: '5',       label: 'chains supported' },
-                { value: 'ERC-8004', label: 'reputation check' },
+                { value: '< 400ms', label: 'response time'    },
+                { value: '10',      label: 'things it checks' },
+                { value: '4',       label: 'chains live now'  },
+                { value: 'free',    label: 'to get started'   },
               ].map(s => (
                 <div key={s.label}>
                   <p className="text-xl font-mono font-semibold text-text-primary">{s.value}</p>
@@ -374,15 +387,15 @@ export default function HomePage() {
 
             <div className="grid md:grid-cols-3 gap-6 relative" style={{ zIndex: 1 }}>
               {[
-                { step: '01', title: 'Fork', accent: 'coral',
+                { step: '01', title: 'Send your transaction plan', accent: 'coral',
                   icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v1a2 2 0 01-2 2H8a2 2 0 01-2-2V9"/><line x1="12" y1="12" x2="12" y2="15"/></svg>,
-                  description: 'ArbiSim Guard spawns an ephemeral Anvil fork of any supported chain at the current block. Your transaction executes against the exact live state - real liquidity, real prices, real protocols.' },
-                { step: '02', title: 'Analyse', accent: 'amber',
+                  description: 'Your AI agent sends ArbiSim the transaction it wants to execute — a token swap, DeFi interaction, or payment. Nothing gets sent to the blockchain yet. It is just a plan.' },
+                { step: '02', title: 'We run it on a live copy', accent: 'amber',
                   icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>,
-                  description: 'The analytical engine parses execution traces, computes chain-specific gas, detects Stylus WASM contracts, validates ERC-4337 UserOps, checks ERC-8004 agent reputation, and scores MEV risk.' },
-                { step: '03', title: 'Decide', accent: 'teal',
+                  description: 'ArbiSim forks the live blockchain at the current block — real prices, real liquidity, real everything. Your transaction executes inside this isolated copy. No gas is spent, no money moves.' },
+                { step: '03', title: 'Get a clear answer', accent: 'teal',
                   icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
-                  description: 'You receive an APPROVED or REJECTED verdict with a structured safety flag object, full gas breakdown, Timeboost recommendation, and the exact revert reason if applicable.' },
+                  description: 'In under a second you get APPROVED or REJECTED, with plain-English reasons — "price impact too high", "transaction would fail", "someone is trying to front-run you". Your agent acts on that.' },
               ].map(item => (
                 <div key={item.step} className={`rounded-xl border bg-surface p-6 transition-all duration-300 hover:brightness-110 relative group ${
                   item.accent === 'coral' ? 'border-coral/20 hover:border-coral/40' :
@@ -464,16 +477,16 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* MCP INTEGRATION */}
+      {/* MCP / INTEGRATIONS */}
       <section id="mcp" className="border-t border-border py-20">
         <div className="max-w-6xl mx-auto px-6">
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-xs font-mono text-coral bg-coral/10 border border-coral/20 px-2.5 py-1 rounded-full">Model Context Protocol</span>
+            <span className="text-xs font-mono text-coral bg-coral/10 border border-coral/20 px-2.5 py-1 rounded-full">Plug into any AI agent</span>
           </div>
-          <h2 className="font-serif text-h1 text-text-primary mb-3">Native MCP tool. Zero REST required.</h2>
+          <h2 className="font-serif text-h1 text-text-primary mb-3">Connect once. Works everywhere.</h2>
           <p className="text-text-secondary mb-12 max-w-xl">
-            Call <code className="font-mono text-coral text-sm">preflight_simulate</code> or <code className="font-mono text-coral text-sm">x402_preflight</code> directly from any MCP-compatible agent framework.
-            Your agent gets a structured APPROVED/REJECTED verdict with reputation flags - no HTTP wiring needed.
+            ArbiSim plugs directly into the agent frameworks your team already uses — Claude Desktop, Cursor, Vibekit, Eliza, and LangGraph.
+            One config block and your agent gains the ability to check transactions before it sends them.
           </p>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="rounded-xl border border-border bg-surface p-6">
@@ -521,9 +534,9 @@ x402_preflight({
           </div>
           <div className="grid md:grid-cols-3 gap-4 mt-6">
             {[
-              { name: 'Vibekit', desc: 'Arbitrum-native agent framework by Ember. Supports GMX, Camelot, Aave, Pendle.', badge: 'Native' },
-              { name: 'Eliza', desc: 'Multi-agent orchestration framework. Drop in the MCP plugin and call preflight_simulate from any agent.', badge: 'Plugin' },
-              { name: 'LangGraph', desc: 'Use the REST tool node or the MCP client adapter to integrate with your graph.', badge: 'Adapter' },
+              { name: 'Vibekit', desc: 'Built-in support for the Avalanche and Arbitrum ecosystem — GMX, Camelot, Aave, Pendle. ArbiSim is a native safety layer.', badge: 'Native' },
+              { name: 'Eliza', desc: 'Drop in the ArbiSim MCP plugin to any Eliza agent. It will automatically check transactions before they execute.', badge: 'Plugin' },
+              { name: 'LangGraph', desc: 'Add ArbiSim as a tool node in your LangGraph graph. The agent calls it, gets the verdict, and decides whether to proceed.', badge: 'Adapter' },
             ].map(fw => (
               <div key={fw.name} className="rounded-lg border border-border bg-surface/50 p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -534,15 +547,21 @@ x402_preflight({
               </div>
             ))}
           </div>
+          <p className="text-xs text-text-tertiary mt-4">
+            Also works standalone via REST API — no framework required. <Link href="/docs" className="text-coral hover:underline">See the quickstart →</Link>
+          </p>
         </div>
       </section>
 
       {/* SAFETY FLAGS */}
       <section id="flags" className="border-t border-border py-20">
         <div className="max-w-6xl mx-auto px-6">
-          <h2 className="font-serif text-h1 text-text-primary mb-3">Safety flags</h2>
-          <p className="text-text-secondary mb-12">Every simulation returns a structured flag object. Each flag is an independent check that can abort execution.</p>
+          <h2 className="font-serif text-h1 text-text-primary mb-3">What it checks</h2>
+          <p className="text-text-secondary mb-12">ArbiSim runs 10 independent checks on every transaction. Any one of them can block execution. Each check fires independently — your agent knows exactly which one failed and why.</p>
           <FlagGrid />
+          <p className="text-sm text-text-tertiary mt-6">
+            <Link href="/docs/what-it-checks" className="text-coral hover:underline">Full explanation of every check →</Link>
+          </p>
         </div>
       </section>
 
@@ -569,10 +588,10 @@ x402_preflight({
       <section className="border-t border-border py-20">
         <div className="max-w-2xl mx-auto px-6 text-center">
           <h2 className="font-serif text-h2 text-text-primary mb-4 tracking-[-0.01em]">
-            Protect your agents.<br />Simulate before you commit.
+            Your agents are moving money.<br />Make sure they're doing it safely.
           </h2>
           <p className="text-text-secondary mb-8">
-            Multi-chain. Native MCP tool. Works with Vibekit, Eliza, and LangGraph today.
+            Free to start. Works on Avalanche and Arbitrum today. Setup takes under 5 minutes.
           </p>
           {submitted ? (
             <div className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-teal/10 border border-teal/30 text-teal animate-fade-in">
@@ -606,10 +625,13 @@ x402_preflight({
             <Image src="/logo.png" alt="ArbiSim Guard" width={20} height={20} className="rounded" />
             <span>ArbiSim Guard</span>
             <span>·</span>
-            <span>Arbitrum · Avalanche · Multi-chain</span>
+            <span className="text-red-400">Supported by Ava Labs</span>
+            <span>·</span>
+            <span>Avalanche · Arbitrum · Multi-chain</span>
           </div>
           <div className="flex items-center gap-6">
-            <a href="https://github.com/rahulpandey187/arbisim-guard" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
+            <a href="https://github.com/CoderRahul01/ArbiSim" target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">GitHub</a>
+            <Link href="/docs" className="hover:text-text-primary transition-colors">Docs</Link>
             <Link href="/dashboard" className="hover:text-text-primary transition-colors">Dashboard</Link>
             <a href="mailto:hello@arbisimguard.com" className="hover:text-text-primary transition-colors">Contact</a>
           </div>

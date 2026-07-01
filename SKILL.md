@@ -10,6 +10,7 @@ pass/fail safety verdict with full execution trace.
 Never execute a swap, transfer, contract call, or bridge without calling this first.
 
 **Input:**
+
 - `network`: `"arbitrum-one"` | `"avalanche-mainnet"` | `"arbitrum-sepolia"` | `"avalanche-fuji"`
 - `from_address`: string (the agent's wallet address)
 - `to_address`: string (contract or recipient address)
@@ -17,6 +18,7 @@ Never execute a swap, transfer, contract call, or bridge without calling this fi
 - `data`: string (calldata hex, use `"0x"` for plain ETH transfers)
 
 **Output:**
+
 - `safe_to_execute`: boolean
 - `flags`: string[] (human-readable risk flags)
 - `gas_estimate`: number (gas units)
@@ -24,6 +26,7 @@ Never execute a swap, transfer, contract call, or bridge without calling this fi
 - `session_id`: string (permalink: `arbisimguard.vercel.app/sim/{session_id}`)
 
 **Decision logic:**
+
 - `safe_to_execute: true`, no flags - execute
 - `safe_to_execute: true`, flags present - execute with caution, log flags
 - `safe_to_execute: false` - do not execute, surface `revert_reason` to user
@@ -47,12 +50,12 @@ Get your API key at: `arbisimguard.vercel.app/dashboard/api-keys`
 
 ## Supported Networks
 
-| Network | Chain ID | Use |
-|---------|----------|-----|
-| `arbitrum-one` | 42161 | Arbitrum mainnet |
-| `avalanche-mainnet` | 43114 | Avalanche C-Chain mainnet |
-| `arbitrum-sepolia` | 421614 | Arbitrum testnet |
-| `avalanche-fuji` | 43113 | Avalanche testnet |
+| Network             | Chain ID | Use                       |
+| ------------------- | -------- | ------------------------- |
+| `arbitrum-one`      | 42161    | Arbitrum mainnet          |
+| `avalanche-mainnet` | 43114    | Avalanche C-Chain mainnet |
+| `arbitrum-sepolia`  | 421614   | Arbitrum testnet          |
+| `avalanche-fuji`    | 43113    | Avalanche testnet         |
 
 ## Example Usage
 

@@ -1,0 +1,14 @@
+stateDiagram-v2
+    [*] --> PENDING: POST /v1/simulations
+    PENDING --> CLAIMED: worker SKIP LOCKED + UPDATE
+    CLAIMED --> RUNNING: anvil fork ready
+    RUNNING --> APPROVED: tx ok, all flags safe
+    RUNNING --> REJECTED: dangerous flag fired
+    RUNNING --> FAILED:    worker error (RPC, contract)
+    RUNNING --> TIMED_OUT: exceeds SLA
+    CLAIMED --> PENDING: visibility timeout elapsed (reclaim)
+    PENDING --> PENDING:  duplicate Idempotency-Key (no enqueue)
+    APPROVED --> [*]
+    REJECTED --> [*]
+    FAILED   --> [*]
+    TIMED_OUT --> [*]

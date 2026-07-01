@@ -1,0 +1,16 @@
+flowchart LR
+    Agent["AI Agent Framework<br/>(Vibekit, Eliza, LangGraph)"]
+    Dev["Web3 Developer<br/>(human)"]
+    ArbiSim(["ArbiSim Guard"])
+    ArbRPC["Arbitrum RPC<br/>(Nitro node)"]
+    Chainlink["Chainlink Data Feeds<br/>(ETH/USD, L2 sequencer uptime)"]
+    EP["ERC-4337 EntryPoint<br/>+ bundler"]
+    Stripe["Stripe<br/>(billing)"]
+
+    Agent -->|MCP tool call: preflight_simulate| ArbiSim
+    Dev    -->|HTTPS REST or dashboard| ArbiSim
+
+    ArbiSim -->|fork + trace + state| ArbRPC
+    ArbiSim -->|oracle + staleness checks| Chainlink
+    ArbiSim -->|simulateValidation, getUserOpHash| EP
+    ArbiSim -->|checkout + webhooks| Stripe
