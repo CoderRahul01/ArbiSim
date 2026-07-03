@@ -233,12 +233,23 @@ export default function AgentDetailPage() {
       )}
 
       {results?.[0]?.passed === false && (
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs space-y-1">
-          <p className="font-semibold text-amber-200">⚠️ Baseline Control Test Failed</p>
-          <p>
-            The agent's transaction reverted during unmutated baseline execution ({results[0].revert_reason || 'Transaction reverted'}).
-            Ensure your agent spec has valid contract targets and calldata. Subsequent failure injection tests are marked SKIPPED until baseline passes.
-          </p>
+        <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs space-y-3">
+          <div>
+            <p className="font-semibold text-amber-200 text-sm">⚠️ Baseline Control Test Failed</p>
+            <p className="mt-1 leading-relaxed text-slate-300">
+              The agent's transaction reverted during unmutated baseline execution (<strong className="font-mono text-amber-200">{results[0].revert_reason || 'Transaction reverted'}</strong>).
+              Ensure your agent spec targets a valid contract address with supported calldata. Subsequent failure injection tests are marked SKIPPED until baseline passes.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <Link
+              href="/dashboard/agents/new"
+              className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-semibold text-xs hover:bg-amber-400 transition-colors"
+            >
+              + Create Agent with Valid Preset →
+            </Link>
+          </div>
         </div>
       )}
 

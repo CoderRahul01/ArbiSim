@@ -395,7 +395,17 @@ class AnalyticalBrain:
 
                     if receipt["status"] == 0:
                         execution_status = "REVERT"
-                        revert_reason = f"Transaction at index {idx} reverted."
+                        # Try to decode exact revert string via eth_call simulation
+                        try:
+                            self.w3.eth.call({
+                                "from": agent_checksum,
+                                "to": to_addr,
+                                "data": tx["data"],
+                                "value": _parse_int(tx.get("value", "0")),
+                            })
+                            revert_reason = f"Transaction at index {idx} reverted."
+                        except Exception as call_err:
+                            revert_reason = f"Tx #{idx} reverted: {str(call_err)}"
                         break
 
                     total_gas_used += receipt["gasUsed"]
