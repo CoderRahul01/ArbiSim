@@ -502,6 +502,26 @@ async def process_stress_test(job: dict) -> None:
 
         print(f"[StressTest] Done. agent={agent_id} score={suite_result.score} passed={suite_result.passed_all}")
 
+        # Broadcast on-chain audit log to SimulationRegistry on Avalanche C-Chain mainnet
+        try:
+            from chain_registry import log_simulation_onchain
+            baseline_report = suite_result.results[0].simulation_report if suite_result.results else {}
+            baseline_report["agent_address"] = spec.get("agent_address")
+            tx_hash = await log_simulation_onchain(
+                session_id=stress_test_id,
+                report=baseline_report,
+                chain_id=43114,
+            )
+            if tx_hash and tx_hash != "0x" + "0" * 64:
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE agents SET deployment_tx = $1 WHERE id = $2",
+                        tx_hash, agent_id
+                    )
+                print(f"[StressTest] On-Chain Registry Logged tx={tx_hash}")
+        except Exception as reg_err:
+            print(f"[StressTest] On-Chain Registry log skipped: {reg_err}")
+
     except Exception as exc:
         print(f"[StressTest] ERROR agent={agent_id}: {exc}")
         async with pool.acquire() as conn:

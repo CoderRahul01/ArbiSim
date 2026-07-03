@@ -185,7 +185,7 @@ export default function NewAgentPage() {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Agent Wallet Address</label>
+                <label className="block text-slate-300 font-medium mb-1">Your Agent Wallet Address (EOA / Smart Account)</label>
                 <input
                   type="text"
                   value={agentAddress}
@@ -193,6 +193,9 @@ export default function NewAgentPage() {
                   placeholder="0x..."
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-red-500"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  💡 Enter the wallet address your AI agent uses to sign transactions on Avalanche. Use your own MetaMask address, Privy account, or the default preset.
+                </p>
               </div>
             </div>
           </div>

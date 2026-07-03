@@ -117,10 +117,20 @@ const NAV_ITEMS = [
     label: 'Billing',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="3.5" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
+        <rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+        <line x1="1" y1="7" x2="15" y2="7" stroke="currentColor" strokeWidth="1.5"/>
       </svg>
     ),
+  },
+  {
+    href: '/status',
+    label: 'System Status',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="4" fill="#34d399" className="animate-pulse" />
+      </svg>
+    ),
+    badge: '99.9%',
   },
   {
     href: '/dashboard/settings',

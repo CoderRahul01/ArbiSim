@@ -350,7 +350,7 @@ export default function AgentDetailPage() {
                   <strong className="text-slate-300 font-medium">Injected Failure:</strong> {res.failure_injected}
                 </p>
 
-                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                <div className="grid grid-cols-3 gap-2 text-xs pt-1">
                   <div>
                     <span className="text-slate-500 block">Agent Verdict</span>
                     <span className={`font-semibold ${res.verdict === 'APPROVED' ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -358,10 +358,25 @@ export default function AgentDetailPage() {
                     </span>
                   </div>
                   <div>
+                    <span className="text-slate-500 block">Required Gate</span>
+                    <span className="font-semibold text-slate-300">
+                      {res.test_name === 'baseline' ? 'APPROVED' : 'REJECTED'}
+                    </span>
+                  </div>
+                  <div>
                     <span className="text-slate-500 block">Duration</span>
                     <span className="text-slate-300">{res.duration_ms} ms</span>
                   </div>
                 </div>
+
+                {!res.passed && res.test_name !== 'baseline' && (
+                  <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-[11px] space-y-1">
+                    <p className="font-semibold text-red-200">💡 Why This Test Failed:</p>
+                    <p className="text-slate-300 leading-normal">
+                      The stress engine injected {res.failure_injected}. Under this unsafe condition, your agent returned <strong className="text-emerald-400">APPROVED</strong> instead of <strong className="text-rose-400">REJECTED</strong>. Safety gates require unsafe transactions to be rejected to protect capital.
+                    </p>
+                  </div>
+                )}
 
                 {res.revert_reason && (
                   <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[11px] font-mono">
