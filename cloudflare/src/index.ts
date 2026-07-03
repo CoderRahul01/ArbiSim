@@ -428,6 +428,35 @@ export default {
       return jsonError(401, 'MISSING_API_KEY', 'Provide your API key via X-API-Key header.', origin);
     }
 
+    // ── Demo / Guest key bypass: proxy directly to GATEWAY_URL ───────────────
+    if (rawKey === 'demo' || rawKey === 'guest' || rawKey.startsWith('demo_') || rawKey.startsWith('guest_')) {
+      const targetUrl = env.GATEWAY_URL.replace(/\/$/, '') + url.pathname + url.search;
+      const proxyRequest = new Request(targetUrl, {
+        method: request.method,
+        headers: {
+          ...Object.fromEntries(request.headers.entries()),
+          'X-ArbiSim-Tier': 'developer',
+          'X-ArbiSim-Owner': 'guest_demo_user',
+          'X-ArbiSim-Key-Hash': 'demo_hash',
+        },
+        body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : null,
+      });
+      try {
+        const response = await fetch(proxyRequest);
+        const body = await response.arrayBuffer();
+        return new Response(body, {
+          status: response.status,
+          headers: {
+            'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
+            'X-ArbiSim-Tier': 'developer',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch {
+        return jsonError(502, 'GATEWAY_ERROR', 'Simulation engine unreachable.', origin);
+      }
+    }
+
     // ── Admin routes: validate against ADMIN_API_KEY secret, bypass KV ───────
     if (url.pathname.startsWith('/admin/') || url.pathname === '/admin') {
       if (!env.ADMIN_API_KEY || rawKey !== env.ADMIN_API_KEY) {
