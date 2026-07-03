@@ -13,6 +13,7 @@ const navSections = [
     { href: '/docs/chains', label: 'Supported chains' },
   ]},
   { title: 'Integrations', links: [
+    { href: '/docs/circle', label: 'Circle Agent Stack (x402)' },
     { href: '/docs/mcp', label: 'MCP agents (Claude, Cursor)' },
     { href: '/docs/rest-api', label: 'REST API' },
     { href: '/docs/frameworks', label: 'Vibekit, Eliza, LangGraph' },
