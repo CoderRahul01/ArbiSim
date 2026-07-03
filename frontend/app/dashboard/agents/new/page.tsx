@@ -17,13 +17,13 @@ export default function NewAgentPage() {
   const [name, setName] = useState('Avalanche Yield & Arbitrage Agent');
   const [description, setDescription] = useState('Executes automated swaps on TraderJoe V1 and Pangolin DEXs on Avalanche C-Chain.');
   const [network, setNetwork] = useState<'avalanche-mainnet' | 'avalanche-fuji'>('avalanche-mainnet');
-  const [agentAddress, setAgentAddress] = useState('0x60aE616a2155Ee3d9A68541Ba4544862310933d4');
+  const [agentAddress, setAgentAddress] = useState('0x742d35Cc6634C0532925a3b844Bc454e4438f44e');
 
-  // Transactions list
+  // Transactions list (Default preset: Wrap 0.1 AVAX to WAVAX on Avalanche C-Chain)
   const [transactions, setTransactions] = useState([
     {
-      to: '0x60aE616a2155Ee3d9A68541Ba4544862310933d4', // TraderJoe Router
-      data: '0x7ff36ab50000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000008000000000000000000000000060ae616a2155ee3d9a68541ba4544862310933d400000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000b31f66aa3c1e785363f0875a1b74e27b85fd66c7000000000000000000000000b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
+      to: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', // WAVAX Mainnet
+      data: '0xd0e30db0', // deposit()
       value: '100000000000000000', // 0.1 AVAX
     },
   ]);

@@ -137,8 +137,24 @@ class StressTestSuite:
             ("contract_revert",  self._test_contract_revert,  "Target contract replaced with reverting bytecode"),
         ]
 
-        for test_name, test_fn, failure_desc in test_fns:
-            result = await self._run_isolated(test_name, test_fn, failure_desc)
+        baseline_passed = True
+        for idx, (test_name, test_fn, failure_desc) in enumerate(test_fns):
+            if idx > 0 and not baseline_passed:
+                # If baseline failed, subsequent failure injection tests must NOT pass as false positives
+                result = StressTestResult(
+                    test_name=test_name,
+                    passed=False,
+                    verdict="SKIPPED",
+                    failure_injected=failure_desc,
+                    simulation_report={},
+                    duration_ms=0,
+                    error="Baseline control run failed: transaction reverted before failure injection",
+                )
+            else:
+                result = await self._run_isolated(test_name, test_fn, failure_desc)
+                if test_name == "baseline":
+                    baseline_passed = result.passed
+
             suite.results.append(result)
             logger.info(
                 "[StressTest] agent=%s test=%s passed=%s verdict=%s duration=%dms",
@@ -150,11 +166,19 @@ class StressTestSuite:
         return suite
 
     async def _run_isolated(self, test_name: str, test_fn, failure_desc: str) -> StressTestResult:
-        """Spins up a fresh fork, runs one test, always reverts and tears down."""
+        """Spins up a fresh fork, funds agent wallet with 100 AVAX, runs test, reverts and tears down."""
         anvil = AnvilForkInstance(self.network)
         start = time.time()
         try:
             rpc_url = await anvil.start()
+            # Fund agent_address with 100 AVAX (100e18 wei) so balance isn't an issue
+            try:
+                await self._anvil_rpc(rpc_url, "anvil_setBalance", [
+                    self.agent_address, hex(100 * 10 ** 18)
+                ])
+            except Exception:
+                pass
+
             snapshot_id = await anvil.take_snapshot()
             try:
                 result = await test_fn(rpc_url)

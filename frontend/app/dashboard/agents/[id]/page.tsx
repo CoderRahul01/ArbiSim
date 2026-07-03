@@ -229,6 +229,16 @@ export default function AgentDetailPage() {
         </div>
       )}
 
+      {results?.[0]?.passed === false && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs space-y-1">
+          <p className="font-semibold text-amber-200">⚠️ Baseline Control Test Failed</p>
+          <p>
+            The agent's transaction reverted during unmutated baseline execution ({results[0].revert_reason || 'Transaction reverted'}).
+            Ensure your agent spec has valid contract targets and calldata. Subsequent failure injection tests are marked SKIPPED until baseline passes.
+          </p>
+        </div>
+      )}
+
       {deploySuccess && (
         <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm">
           🎉 {deploySuccess}
