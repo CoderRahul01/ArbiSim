@@ -98,6 +98,8 @@ const NETWORK_STATUS = [
   { name: 'Arbitrum One',            rpc: 'arb1.arbitrum.io/rpc',         status: 'operational' },
   { name: 'Simulation Engine',       rpc: 'Python Anvil worker (Ankr/Infura pool)', status: 'operational' },
   { name: 'Gateway API',             rpc: 'Node / Express',               status: 'operational' },
+  { name: 'Circle x402 Nanopayments', rpc: '@circle-fin/x402-batching · $0.001/call', status: 'operational' },
+  { name: 'Circle Policy Hook',      rpc: '/api/v1/circle/policy-check',  status: 'operational' },
 ];
 
 export default function DashboardOverview() {
@@ -472,6 +474,32 @@ export default function DashboardOverview() {
                 </Link>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Circle Agent Stack callout */}
+        <div className="mt-6 rounded-xl border border-teal/20 bg-teal/5 p-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-mono text-teal bg-teal/10 border border-teal/20 px-2 py-0.5 rounded">CIRCLE</span>
+                <h3 className="text-sm font-semibold text-text-primary">Circle Agent Stack — x402 pay-per-call is live</h3>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed max-w-xl">
+                Circle Agent Wallets can call <code className="font-mono text-teal">/api/v1/circle/policy-check</code> for an instant
+                pre-flight verdict before signing, paying <code className="font-mono text-teal">$0.001 USDC</code> per call via
+                Circle x402 Agent Nanopayments — no API key needed. USDC payloads get automatic slippage and MEV guardrails.
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {['x402 Nanopayments', 'Agent Wallet policy hook', 'USDC protection', 'Circle CLI skill'].map(tag => (
+                  <span key={tag} className="text-[10px] font-mono px-2 py-0.5 rounded-full border border-teal/20 bg-teal/5 text-teal">✓ {tag}</span>
+                ))}
+              </div>
+            </div>
+            <Link href="/docs/circle"
+              className="shrink-0 px-4 py-2 rounded-lg border border-teal/30 bg-teal/10 text-teal text-xs font-medium hover:bg-teal/20 transition-colors whitespace-nowrap">
+              View Circle docs →
+            </Link>
           </div>
         </div>
 

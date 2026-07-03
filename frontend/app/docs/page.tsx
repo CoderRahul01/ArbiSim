@@ -14,6 +14,14 @@ export default function DocsIntroPage() {
         <p className="text-text-secondary text-sm">Before any transaction goes to the blockchain, ArbiSim Guard runs it first — on a copy of the live chain — and tells your agent whether it is safe to proceed.</p>
       </div>
 
+      <div className="rounded-lg border border-border bg-surface px-5 py-4 mb-8 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+        <div>
+          <p className="text-text-primary text-sm font-medium mb-1">New: Circle Agent Stack integration</p>
+          <p className="text-text-tertiary text-xs">Circle Agent Wallets get a native pre-flight policy hook, and agents can pay $0.001 USDC per call with x402 Nanopayments — no API key required.</p>
+        </div>
+        <Link href="/docs/circle" className="shrink-0 text-xs font-medium text-coral hover:underline">Circle docs →</Link>
+      </div>
+
       <h2 className="text-xl font-semibold text-text-primary mt-10 mb-4">The problem it solves</h2>
       <p className="text-text-secondary leading-relaxed mb-4">AI agents are increasingly making financial decisions on their own. They can swap tokens, pay for services, and move funds across chains — all without a human approving each step.</p>
       <p className="text-text-secondary leading-relaxed mb-4">That autonomy is powerful. But it also means there is nothing to catch mistakes before they happen. A bad transaction is sent, it reverts or executes badly, and by the time the agent notices, money has been wasted or lost.</p>

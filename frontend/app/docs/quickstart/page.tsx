@@ -94,6 +94,7 @@ curl -X POST https://api.arbisimguard.com/api/v1/circle/policy-check \\
       <h2 className="text-xl font-semibold text-text-primary mt-10 mb-4">What next?</h2>
       <div className="grid sm:grid-cols-2 gap-3">
         {[
+          { href: '/docs/circle', label: 'Circle Agent Stack', desc: 'Agent Wallet policy hook, x402 pay-per-call, and the Circle CLI skill.' },
           { href: '/docs/what-it-checks', label: 'What every check means', desc: 'Plain-English explanation of all 10 safety checks.' },
           { href: '/docs/chains', label: 'Supported chains guide', desc: 'Avalanche-specific setup and Arbitrum configuration.' },
           { href: '/docs/mcp', label: 'MCP integration', desc: 'Connect to Claude Desktop, Cursor, or any MCP client.' },
