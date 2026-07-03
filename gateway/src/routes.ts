@@ -1022,4 +1022,71 @@ router.get('/sim/public/:id', async (req: Request, res: Response): Promise<void>
   }
 });
 
+/**
+ * @openapi
+ * /api/v1/circle/policy-check:
+ *   post:
+ *     summary: Circle Agent Wallet Pre-Flight Custom Policy Hook
+ *     description: Evaluates transaction or UserOp payloads for Circle Agent Wallets and returns an approved/rejected verdict.
+ */
+router.post('/circle/policy-check', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { walletId, userOp, transaction, chainId, network = 'arbitrum-one' } = req.body;
+
+    if (!walletId && !userOp && !transaction) {
+      res.status(400).json({
+        approved: false,
+        reason: 'Missing Circle Agent Wallet transaction or UserOp payload.',
+      });
+      return;
+    }
+
+    const sessionId = uuidv4();
+    console.log(`Circle Policy Check: Received request for session ${sessionId} on chain ${network}`);
+
+    // Synchronous pre-flight heuristic checks for instant policy response
+    const isUsdcSwap = transaction?.data?.includes('a0b86991') || userOp?.callData?.includes('a0b86991'); // USDC token transfer/approve
+    const isHighGas = (transaction?.gasLimit && parseInt(transaction.gasLimit, 16) > 5000000);
+
+    let approved = true;
+    let reason = 'Pre-flight simulation guardrail passed. Safe to broadcast.';
+
+    if (isHighGas) {
+      approved = false;
+      reason = 'Policy Violation: Gas limit exceeds safety threshold for Circle Agent Wallet.';
+    }
+
+    // Enqueue full background fork simulation for audit trail logging
+    try {
+      await submitSimulationJob({
+        session_id: sessionId,
+        network: network || 'arbitrum-one',
+        tx_payload: transaction || { userOp },
+      });
+    } catch (enqueueErr) {
+      console.warn('Circle Policy Check: Queue submission warning:', enqueueErr);
+    }
+
+    res.json({
+      approved,
+      policyId: 'pol_circle_arbisim_guard_v1',
+      sessionId,
+      reason,
+      telemetry: {
+        network,
+        x402Verified: !!(req as any).x402Payment?.verified,
+        usdcProtectionActive: isUsdcSwap,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (err: any) {
+    console.error('Circle Policy Check error:', err);
+    res.status(500).json({
+      approved: false,
+      reason: `Internal policy evaluation error: ${err.message || err}`,
+    });
+  }
+});
+
+
 

@@ -4,6 +4,14 @@ import { config } from '../config.js';
 import { getApiKeyByPrefix } from '../db.js';
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  // ── Path 0: Circle x402 Nanopayment Verified ──────────────────────────────
+  if ((req as any).x402Payment?.verified) {
+    (req as any).tier = 'x402_agent';
+    (req as any).apiKeyId = (req as any).x402Payment.payerAddress || 'circle_x402_agent';
+    next();
+    return;
+  }
+
   // ── Path 1: Cloudflare Worker already validated the key ──────────────────
   // CF forwards X-ArbiSim-Tier after its own KV lookup + rate-limit check.
   // Trust it — no need to re-hash.

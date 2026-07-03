@@ -20,6 +20,7 @@ import nowPaymentsRouter from './routes/nowpayments.js';
 import circleRouter from './routes/circle.js';
 import agentsRouter from './routes/agents.js';
 import { requireAuth } from './middleware/auth.js';
+import { x402Middleware } from './middleware/x402.js';
 import { initDb } from './db.js';
 import { MCP_TOOLS, callMcpTool } from './mcp-tools.js';
 
@@ -36,6 +37,9 @@ const app = express();
 const port = config.gateway.port;
 
 app.use(express.json());
+
+// Enable Circle x402 Agent Nanopayments middleware globally across simulation API endpoints
+app.use(x402Middleware);
 
 // Health / warm-up endpoint (no auth)
 app.get('/ping', (_req, res) => res.json({ status: 'ok' }));

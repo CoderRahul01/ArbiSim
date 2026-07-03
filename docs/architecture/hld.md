@@ -12,30 +12,31 @@ External actors and the systems ArbiSim depends on. One sentence per arrow.
 
 ```mermaid
 flowchart LR
-    Agent["AI Agent Framework<br/>(Vibekit, Eliza, LangGraph)"]
+    Agent["AI Agent Framework<br/>(Circle CLI, OpenClaw, Vibekit, Eliza)"]
     Dev["Web3 Developer<br/>(human)"]
     ArbiSim(["ArbiSim Guard"])
-    ArbRPC["Arbitrum RPC<br/>(Nitro node)"]
+    ArbRPC["Arbitrum & Arc RPC<br/>(Nitro / Arc nodes)"]
     Chainlink["Chainlink Data Feeds<br/>(ETH/USD, L2 sequencer uptime)"]
-    EP["ERC-4337 EntryPoint<br/>+ bundler"]
-    Stripe["Stripe<br/>(billing)"]
+    EP["ERC-4337 EntryPoint<br/>+ Circle Wallets"]
+    Circle["Circle Agent Stack<br/>(x402 Nanopayments, USDC)"]
 
-    Agent -->|MCP tool call: preflight_simulate| ArbiSim
+    Agent -->|MCP / Circle Skill: policy_check| ArbiSim
     Dev    -->|HTTPS REST or dashboard| ArbiSim
+    Agent  -->|Sub-cent USDC x402 header| ArbiSim
 
     ArbiSim -->|fork + trace + state| ArbRPC
     ArbiSim -->|oracle + staleness checks| Chainlink
     ArbiSim -->|simulateValidation, getUserOpHash| EP
-    ArbiSim -->|checkout + webhooks| Stripe
+    ArbiSim -->|x402 verification + webhooks| Circle
 ```
 
 **External actors**
-- **AI Agent Frameworks** (Vibekit, Eliza, LangGraph) — call `preflight_simulate` over MCP stdio (local) or Streamable HTTP (production).
-- **Web3 Developer (human)** — uses the Next.js dashboard for the playground, API-key management, and backtesting.
-- **Arbitrum RPC** — Nitro node for fork state. ArbiSim never broadcasts to this; it reads.
-- **Chainlink Data Feeds** — used for USD P&L and (critically) the L2 Sequencer Uptime Feed.
-- **ERC-4337 EntryPoint + bundler** — only for `simulateValidation`. The user's tx is *not* submitted to a bundler from ArbiSim; bundler interaction is read-only off-chain validation.
-- **Stripe** — billing for paid tiers.
+- **AI Agent Frameworks & Circle CLI** (Circle Agent Stack, OpenClaw, Vibekit, Eliza) — invoke pre-flight simulation hooks via Circle Skill (`arbisim-guard`) or MCP stdio/HTTP.
+- **Circle Agent Stack** — provides x402 Agent Nanopayments (gasless per-request USDC authorization) and Circle Agent Wallets.
+- **Web3 Developer (human)** — uses the Next.js dashboard for playground, API-key management, and backtesting.
+- **Arbitrum & Arc RPC** — Nitro and Arc nodes for fork state. ArbiSim reads state; it never broadcasts write operations directly.
+- **Chainlink Data Feeds** — used for USD P&L calculations and L2 Sequencer Uptime verification.
+- **ERC-4337 EntryPoint & Circle Wallets** — used for off-chain UserOp and wallet policy validation.
 
 ---
 
