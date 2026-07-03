@@ -1058,11 +1058,16 @@ router.post('/circle/policy-check', async (req: Request, res: Response): Promise
 
     // Enqueue full background fork simulation for audit trail logging
     try {
-      await submitSimulationJob({
-        session_id: sessionId,
-        network: network || 'arbitrum-one',
-        tx_payload: transaction || { userOp },
-      });
+      const txList = transaction ? [transaction] : (userOp ? [{ to: userOp.sender || '0x0000000000000000000000000000000000000000', data: userOp.callData || '0x', value: '0x0' }] : []);
+      await submitSimulationJob(
+        sessionId,
+        network || 'arbitrum-one',
+        transaction?.from || userOp?.sender || '0x0000000000000000000000000000000000000000',
+        txList,
+        0.5,
+        (req as any).apiKeyId || 'circle_policy_user',
+        null
+      );
     } catch (enqueueErr) {
       console.warn('Circle Policy Check: Queue submission warning:', enqueueErr);
     }

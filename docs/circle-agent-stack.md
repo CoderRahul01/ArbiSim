@@ -32,20 +32,20 @@ ArbiSim Guard acts as a pre-flight execution barrier: before a Circle Agent Wall
 
 ## 2. Circle x402 Agent Nanopayments
 
-ArbiSim Guard natively supports **Circle x402 Agent Nanopayments**, allowing AI agents to pay per simulation request (e.g. 0.001 USDC) gaslessly and on-demand without registering for traditional API keys.
+ArbiSim Guard natively supports **Circle x402 Agent Nanopayments** via `@circle-fin/x402-batching`, allowing AI agents to pay per simulation request ($0.001 USDC) gaslessly and on-demand without registering for traditional API keys.
 
 ### Request Format
 Agents attach the `X-402-Payment` header to requests sent to `/api/v1/simulate` or `/api/v1/circle/policy-check`:
 
 ```http
 POST /api/v1/circle/policy-check HTTP/1.1
-Host: arbisimguard.com
+Host: api.arbisimguard.com
 Content-Type: application/json
 X-402-Payment: x402 0x9eA8B065a624DF44CaB6C8cae74a22e07e29f2f1:0.001:0x402_sig_12345
 ```
 
 ### Response Format (HTTP 402 if unauthenticated)
-If an unauthenticated agent requests a simulation, ArbiSim Guard returns `402 Payment Required`:
+If an unauthenticated agent requests a simulation, ArbiSim Guard returns `402 Payment Required` with Circle x402 batching metadata:
 
 ```json
 {
@@ -55,7 +55,7 @@ If an unauthenticated agent requests a simulation, ArbiSim Guard returns `402 Pa
     "pricePerRequestUsdc": "0.001",
     "recipient": "0x9eA8B065a624DF44CaB6C8cae74a22e07e29f2f1",
     "supportedChains": ["arbitrum-one", "arbitrum-sepolia", "arc-testnet"],
-    "instructions": "Attach header `X-402-Payment: x402 <payerAddress>:<amount>:<signatureOrTx>`"
+    "instructions": "Attach header `X-402-Payment: x402 <payerAddress>:<amount>:<signatureOrTx>` or use official @circle-fin/x402-batching client."
   }
 }
 ```
@@ -76,7 +76,7 @@ circle skill install arbisim-guard
 import { CircleAgentWalletGuardrail } from './policy_connector';
 
 const guardrail = new CircleAgentWalletGuardrail({
-  endpoint: 'https://arbisimguard.com/api/v1',
+  endpoint: 'https://api.arbisimguard.com/api/v1',
   useX402Nanopayments: true,
 });
 
@@ -96,9 +96,25 @@ if (!policy.approved) {
 
 ---
 
-## 4. Multichain Support (Arbitrum & Arc)
+## 4. Circle Developer Grant Roadmap & Milestones
 
-ArbiSim Guard supports simulation on:
-- **Arbitrum One (Chain ID 42161)**: Brotli compressed gas buffer, Nitro 2-D gas model, and Stylus WASM Ink analysis.
-- **Arbitrum Sepolia (Chain ID 421614)**: On-chain audit logging via `SimulationRegistry`.
-- **Arc Testnet**: Native Circle ecosystem testnet simulation for USDC payments.
+### Milestone 1: Circle Agent Wallet Pre-Flight Policy Integration (Testnet Pilot)
+- **Objective:** Deploy and refine the pre-flight policy engine (`/api/v1/circle/policy-check`) across Circle Programmable Wallets.
+- **Deliverables:**
+  - Full support for ERC-4337 UserOp validation and single/batch transaction simulation on Arbitrum Sepolia and Arc Testnet.
+  - Complete SDK middleware package for agent frameworks (OpenClaw, Eliza, LangGraph).
+- **Target Timeline:** 4 Weeks
+
+### Milestone 2: Multi-Agent USDC Protection & MEV Shield
+- **Objective:** Implement advanced telemetry for USDC transaction security and frontrunning prevention.
+- **Deliverables:**
+  - Automated MEV sandwich risk detection and slippage guardrails for DEX swaps targeting USDC liquidity pools.
+  - On-chain simulation audit trail logging on `SimulationRegistry` smart contracts.
+- **Target Timeline:** 6 Weeks
+
+### Milestone 3: Mainnet Ecosystem Launch & Marketplace Expansion
+- **Objective:** Production rollout on Arbitrum Mainnet & Arc Mainnet with active Circle Agent Marketplace integration.
+- **Deliverables:**
+  - Public dashboard at `arbisimguard.com` with real-time pre-flight simulation telemetry, failure analytics, and API management.
+  - Pilot onboarding with 5+ AI agent builders and wallet providers in the Circle ecosystem.
+- **Target Timeline:** 6 Weeks

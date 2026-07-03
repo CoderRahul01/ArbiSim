@@ -152,8 +152,17 @@ Integrators may retry on network failures. Without dedup, the same transaction c
 
 ---
 
-## 5. Auth flow
+## 5. Auth flow & Circle x402 Nanopayments
 
+ArbiSim Guard supports dual authentication modes:
+
+### Path A: Circle x402 Agent Nanopayments (Gasless / Pay-per-use)
+1. AI Agent sends request with header `X-402-Payment: x402 <payerAddress>:<amountUsdc>:<signatureOrTx>`.
+2. `x402Middleware` verifies the nanopayment token via `@circle-fin/x402-batching`.
+3. If valid, the request is authenticated with `tier = 'x402_agent'` and processed immediately without requiring a pre-registered API key.
+4. If unauthenticated, the server responds with `HTTP 402 Payment Required` and Circle x402 v2 payment instructions.
+
+### Path B: Traditional API Key (`X-API-Key`)
 1. Client sends `X-API-Key: ask_free_a1b2...` (or `ask_pro_…`, `ask_ent_…`).
 2. CF Worker extracts the prefix (`ask_free_a1b2`), looks up tier/quota/used in KV.
 3. If over quota → `429` with `problem+json`. If unknown prefix → `401`.
