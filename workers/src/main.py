@@ -468,6 +468,8 @@ async def process_stress_test(job: dict) -> None:
                 "verdict": r.verdict,
                 "failure_injected": r.failure_injected,
                 "duration_ms": r.duration_ms,
+                "execution_logs": getattr(r, "execution_logs", []),
+                "rpc_calls": getattr(r, "rpc_calls", []),
                 "error": r.error,
                 "gas_cost_eth": r.simulation_report.get("gas_cost_eth"),
                 "net_pnl_usd": r.simulation_report.get("net_pnl_usd"),

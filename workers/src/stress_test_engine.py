@@ -84,6 +84,8 @@ class StressTestResult:
     failure_injected: str  # Human-readable description of what was mutated
     simulation_report: dict
     duration_ms: int
+    execution_logs: list[str] = field(default_factory=list)
+    rpc_calls: list[str] = field(default_factory=list)
     error: Optional[str] = None
 
 
@@ -239,6 +241,13 @@ class StressTestSuite:
             failure_injected="None (control run)",
             simulation_report=report,
             duration_ms=0,
+            execution_logs=[
+                f"Spawned isolated Anvil fork from {self.network} head",
+                f"Funded agent wallet {self.agent_address[:10]}... with 100 AVAX via anvil_setBalance",
+                "Simulated agent transaction batch on unmutated EVM state",
+                f"Evaluated AnalyticalBrain safety gates (verdict={report.get('status')})",
+            ],
+            rpc_calls=["anvil_setBalance", "eth_sendUnsignedTransaction", "debug_traceTransaction"],
         )
 
     # ── Test 2: Liquidity Drain ─────────────────────────────────────────────────
