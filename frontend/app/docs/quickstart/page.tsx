@@ -23,40 +23,44 @@ export default function QuickstartPage() {
 
       <div className="rounded-lg border border-teal/20 bg-teal/5 px-5 py-4 mb-6">
         <p className="text-teal text-sm font-medium mb-2">⚡ Try it right now — no signup, no API key</p>
-        <p className="text-text-secondary text-sm mb-3">Hit the public demo endpoint. Copy, paste, run. You will get a real-looking simulation response back in under a second.</p>
-        <CodeBlock lang="bash" code={`# APPROVED result (Avalanche Fuji)
-curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/demo \\
+        <p className="text-text-secondary text-sm mb-3">Hit the public endpoint or use Circle x402 Agent Nanopayments ($0.001 USDC/call). Copy, paste, run. You will get a real-looking simulation response back in under a second.</p>
+        <CodeBlock lang="bash" code={`# Circle Agent Wallet Policy Pre-Check Hook (x402 Authorized)
+curl -X POST https://api.arbisimguard.com/api/v1/circle/policy-check \\
   -H "Content-Type: application/json" \\
-  -d '{"network":"avalanche-fuji","agent_address":"0xYourAgent"}'
-
-# REJECTED result — shows MEV detection (Arbitrum)
-curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/demo \\
-  -H "Content-Type: application/json" \\
-  -d '{"network":"arbitrum-one","agent_address":"0xYourAgent"}'`} />
-        <p className="text-text-tertiary text-xs">This endpoint is public, has no rate limit, and is specifically designed for demos and evaluations. It returns realistic responses based on the network you choose.</p>
+  -H "X-402-Payment: x402 0xYourAgentWallet:0.001:0xSig" \\
+  -d '{
+    "walletId": "circle_agent_wallet_01",
+    "network": "arbitrum-one",
+    "transaction": {
+      "to": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "data": "0xa9059cbb...",
+      "value": "0x0"
+    }
+  }'`} />
+        <p className="text-text-tertiary text-xs">This endpoint acts as an instant policy guardrail for Circle Agent Wallets and AI agents, backed by block-accurate ephemeral fork simulations.</p>
       </div>
 
-      <h2 className="text-xl font-semibold text-text-primary mt-10 mb-3">Step 1 — Get a free API key (for live simulations)</h2>
-      <p className="text-text-secondary text-sm mb-3">Go to the <Link href="/dashboard/api-keys" className="text-coral hover:underline">API Keys page</Link> and click &quot;Create key&quot;. You will get back a key that looks like:</p>
+      <h2 className="text-xl font-semibold text-text-primary mt-10 mb-3">Step 1 — Get an API key or use Circle x402 Nanopayments</h2>
+      <p className="text-text-secondary text-sm mb-3">Go to the <Link href="/dashboard/api-keys" className="text-coral hover:underline">API Keys page</Link> and click &quot;Create key&quot;. Alternatively, send an <code className="font-mono text-xs text-coral">X-402-Payment</code> header with any request to pay per call in USDC gaslessly.</p>
       <CodeBlock lang="text" code="ask_free_a1b2_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
-      <p className="text-text-tertiary text-xs mb-4">Store this immediately — it is only shown once.</p>
+      <p className="text-text-tertiary text-xs mb-4">Store this key safely — it is only shown once.</p>
 
       <h2 className="text-xl font-semibold text-text-primary mt-10 mb-3">Step 2 — Run your first simulation</h2>
-      <p className="text-text-secondary text-sm mb-3">This call simulates a token swap on Avalanche Fuji testnet. Nothing real happens — it is just a test:</p>
-      <CodeBlock lang="bash" code={`curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/simulate \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ask_free_a1b2_..." \
+      <p className="text-text-secondary text-sm mb-3">This call simulates a token transaction on Arbitrum One. Nothing real happens — it is an ephemeral fork simulation:</p>
+      <CodeBlock lang="bash" code={`curl -X POST https://api.arbisimguard.com/api/v1/simulate \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: ask_free_a1b2_..." \\
   -d '{
-    "network": "avalanche-fuji",
+    "network": "arbitrum-one",
     "agent_address": "0x0000000000000000000000000000000000000001",
     "transactions": [
       {
-        "to":    "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
-        "data":  "0x38ed1739...",
+        "to":    "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "data":  "0xa9059cbb...",
         "value": "0"
       }
     ],
-    "max_slippage_tolerance": 2.0
+    "max_slippage_tolerance": 0.5
   }'`} />
 
       <h2 className="text-xl font-semibold text-text-primary mt-10 mb-3">Step 3 — Read the response</h2>
@@ -69,13 +73,13 @@ curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/demo \
     "frontrun_detected": false,
     "risky_allowance": false
   },
-  "gas_cost": "0.00021 AVAX",
+  "gas_cost": "0.00002132 ETH",
   "verdict": "SAFE — proceed"
 }`} />
       <p className="text-text-secondary text-sm mb-8">If any check fires, the status becomes <code className="font-mono text-red-400 text-xs">REJECTED</code> and the verdict explains why in plain English.</p>
 
       <h2 className="text-xl font-semibold text-text-primary mt-10 mb-3">Step 4 — Connect to your agent (optional)</h2>
-      <p className="text-text-secondary text-sm mb-3">If you use Claude Desktop or Cursor, add this to your MCP config:</p>
+      <p className="text-text-secondary text-sm mb-3">If you use Claude Desktop, OpenClaw, or Cursor, install the Circle CLI skill or add this to your MCP config:</p>
       <CodeBlock lang="json" code={`{
   "mcpServers": {
     "arbisim-guard": {
@@ -85,7 +89,7 @@ curl -X POST https://arbisim-proxy.rahulpandey-creates.workers.dev/api/v1/demo \
     }
   }
 }`} />
-      <p className="text-text-secondary text-sm mb-8">Your agent can now say: <em className="text-text-tertiary">"Simulate a swap of 0.1 AVAX for USDC on Avalanche and abort if slippage exceeds 2%."</em></p>
+      <p className="text-text-secondary text-sm mb-8">Your agent can now say: <em className="text-text-tertiary">"Simulate a USDC transfer on Arbitrum and abort if gas or slippage exceeds safety limits."</em></p>
 
       <h2 className="text-xl font-semibold text-text-primary mt-10 mb-4">What next?</h2>
       <div className="grid sm:grid-cols-2 gap-3">
