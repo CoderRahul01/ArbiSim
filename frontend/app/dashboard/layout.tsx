@@ -35,13 +35,24 @@ const NAV_ITEMS = [
   },
   {
     href: '/dashboard/studio',
-    label: 'Studio',
+    label: 'Payload Sim',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <rect x="1" y="1" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
         <path d="M5 14h6M8 11v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
       </svg>
     ),
+  },
+  {
+    href: '/dashboard/agents',
+    label: 'Agent Studio',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M3 13.5c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+    badge: 'NEW',
   },
   {
     href: '/dashboard/logs',

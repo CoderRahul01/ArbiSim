@@ -197,9 +197,26 @@ def analyze_execution_trace(session_id: str, trace_data: dict, rpc_url: str,
             "value_usd": f"{value_usd:+.2f}",
         })
 
+    # Slippage = abs(net loss) / total input value * 100
+    # Denominator is the USD value of all tokens the agent held before the swap.
+    # This is the correct definition: how much value was lost relative to what went in.
+    input_value_usd = 0.0
+    for token_addr, symbol in tokens_to_track.items():
+        pre_bal = pre_bals.get(token_addr, 0)
+        if pre_bal > 0:
+            try:
+                tc = w3.eth.contract(
+                    address=Web3.to_checksum_address(token_addr), abi=ERC20_ABI
+                )
+                dec = tc.functions.decimals().call()
+            except Exception:
+                dec = 6 if symbol == "USDC" else 18
+            price = analyzer.get_price_usd(symbol, w3)
+            input_value_usd += (pre_bal / (10 ** dec)) * price
+
     slippage_pct = 0.0
-    if net_pnl_usd < 0:
-        slippage_pct = abs(net_pnl_usd) / max(abs(net_pnl_usd) + 1000, 1) * 100.0
+    if net_pnl_usd < 0 and input_value_usd > 0:
+        slippage_pct = (abs(net_pnl_usd) / input_value_usd) * 100.0
 
     # MEV risk
     mev_report = analyzer.compute_mev_risk(transactions, total_gas_used, chain_config)

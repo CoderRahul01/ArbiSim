@@ -77,7 +77,14 @@ const CHECKLIST_ITEMS = [
   },
   {
     step: '03',
-    title: 'Integrate with your agent',
+    title: 'Create an Avalanche Agent',
+    description: 'Stress-test an AI agent against live chain state (MEV, slippage, price crashes) and deploy to C-Chain.',
+    href: '/dashboard/agents/new',
+    cta: 'Open Agent Studio →',
+  },
+  {
+    step: '04',
+    title: 'Integrate with your agent SDK',
     description: 'Call preflight_simulate from Vibekit, Eliza, or LangGraph, or hit the REST endpoint directly.',
     href: 'https://github.com/arbisim-guard/docs',
     cta: 'View docs →',
@@ -86,10 +93,11 @@ const CHECKLIST_ITEMS = [
 ];
 
 const NETWORK_STATUS = [
-  { name: 'Arbitrum One',          rpc: 'arb-mainnet.g.alchemy.com', status: 'operational' },
-  { name: 'Arbitrum Sepolia',      rpc: 'arb-sepolia.g.alchemy.com',  status: 'operational' },
-  { name: 'Simulation Engine',     rpc: 'Python Anvil worker',        status: 'operational' },
-  { name: 'Gateway API',           rpc: 'Node / Express',             status: 'operational' },
+  { name: 'Avalanche C-Chain Mainnet', rpc: 'api.avax.network (EIP-1559)', status: 'operational' },
+  { name: 'Avalanche Fuji Testnet',  rpc: 'api.avax-test.network',        status: 'operational' },
+  { name: 'Arbitrum One',            rpc: 'arb1.arbitrum.io/rpc',         status: 'operational' },
+  { name: 'Simulation Engine',       rpc: 'Python Anvil worker (Ankr/Infura pool)', status: 'operational' },
+  { name: 'Gateway API',             rpc: 'Node / Express',               status: 'operational' },
 ];
 
 export default function DashboardOverview() {

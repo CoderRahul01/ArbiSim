@@ -966,3 +966,60 @@ router.get('/analytics', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+/**
+ * @openapi
+ * /api/v1/feed:
+ *   get:
+ *     summary: Public Safety Feed - recent anonymized simulation verdicts
+ */
+router.get('/feed', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pgPool.query(
+      `SELECT session_id, network, status,
+              COALESCE(telemetry->>'gas_cost_eth', '0') as gas_cost_eth,
+              COALESCE(telemetry->>'net_pnl_usd', '$0.00') as net_pnl_usd,
+              COALESCE(telemetry->>'slippage_detected', '0%') as slippage_detected,
+              created_at
+       FROM simulations
+       WHERE status IN ('APPROVED', 'REJECTED')
+       ORDER BY created_at DESC
+       LIMIT 100`
+    );
+
+    res.json({ simulations: result.rows });
+  } catch (error) {
+    console.error('Failed to fetch public feed:', error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch safety feed.' } });
+  }
+});
+
+/**
+ * @openapi
+ * /api/v1/sim/public/:id:
+ *   get:
+ *     summary: Public simulation explorer details (anonymized)
+ */
+router.get('/sim/public/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const sim = await getSimulation(id);
+
+    if (!sim) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Simulation session not found.' } });
+      return;
+    }
+
+    res.json({
+      session_id: sim.session_id,
+      network: sim.network,
+      status: sim.status,
+      created_at: sim.created_at,
+      telemetry: sim.telemetry || {},
+    });
+  } catch (error) {
+    console.error('Failed to fetch public simulation:', error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch simulation.' } });
+  }
+});
+
+

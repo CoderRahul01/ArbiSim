@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 const navSections = [
   { title: 'Getting Started', links: [
     { href: '/docs', label: 'What is ArbiSim?' },
+    { href: '/docs/agent-studio', label: 'Agent Studio & Stress Testing' },
     { href: '/docs/quickstart', label: 'Quickstart (5 min)' },
   ]},
   { title: 'How It Works', links: [

@@ -18,6 +18,7 @@ import backtestRouter from './routes/backtest.js';
 import webhookRouter from './routes/webhooks.js';
 import nowPaymentsRouter from './routes/nowpayments.js';
 import circleRouter from './routes/circle.js';
+import agentsRouter from './routes/agents.js';
 import { requireAuth } from './middleware/auth.js';
 import { initDb } from './db.js';
 import { MCP_TOOLS, callMcpTool } from './mcp-tools.js';
@@ -52,6 +53,9 @@ app.use('/api/v1', requireAuth, router);
 
 // Backtest routes (authenticated)
 app.use('/api/v1/backtest', requireAuth, backtestRouter);
+
+// Agent Studio routes (authenticated)
+app.use('/api/v1/agents', requireAuth, agentsRouter);
 
 // Webhook routes (authenticated)
 app.use('/api/v1/webhooks', requireAuth, webhookRouter);

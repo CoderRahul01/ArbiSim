@@ -13,6 +13,7 @@ from chain_registry import log_simulation_to_chain
 from chain_config import get_chain
 from backtest_runner import run_backtest
 from webhook_delivery import deliver_webhook
+from stress_test_engine import StressTestSuite
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
 
@@ -388,29 +389,159 @@ async def start_ping_server() -> None:
     print(f"Ping server listening on :{port}")
 
 
+async def poll_and_claim_stress_test() -> dict | None:
+    """Atomically claim the next pending stress test job."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow("""
+                UPDATE stress_test_queue
+                SET status = 'CLAIMED',
+                    claimed_at = NOW(),
+                    worker_id = $1
+                WHERE id = (
+                    SELECT id FROM stress_test_queue
+                    WHERE status = 'PENDING'
+                    ORDER BY created_at ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                RETURNING id, stress_test_id, agent_id
+            """, os.uname().nodename)
+            return dict(row) if row else None
+
+
+async def reclaim_stale_stress_tests() -> None:
+    """Reset CLAIMED stress test jobs that have been running too long."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute("""
+            UPDATE stress_test_queue
+            SET status = 'PENDING', claimed_at = NULL, worker_id = NULL
+            WHERE status = 'CLAIMED'
+              AND claimed_at < NOW() - INTERVAL '15 minutes'
+        """)
+    reclaimed = int(result.split()[-1])
+    if reclaimed:
+        print(f"Reclaimed {reclaimed} stale stress test job(s).")
+
+
+async def process_stress_test(job: dict) -> None:
+    """Runs all 6 stress tests for the claimed agent and writes results to DB."""
+    queue_id = job["id"]
+    stress_test_id = str(job["stress_test_id"])
+    agent_id = str(job["agent_id"])
+
+    pool = await get_pool()
+    print(f"[StressTest] Starting suite for agent={agent_id} stress_test={stress_test_id}")
+
+    try:
+        # Mark stress test as RUNNING
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE stress_tests SET status = 'RUNNING', updated_at = NOW() WHERE id = $1
+            """, stress_test_id)
+            await conn.execute("""
+                UPDATE agents SET stress_status = 'RUNNING', updated_at = NOW() WHERE id = $1
+            """, agent_id)
+
+            # Fetch agent spec
+            agent_row = await conn.fetchrow(
+                "SELECT spec, network FROM agents WHERE id = $1", agent_id
+            )
+
+        if not agent_row:
+            raise ValueError(f"Agent {agent_id} not found in DB")
+
+        spec = json.loads(agent_row["spec"]) if isinstance(agent_row["spec"], str) else dict(agent_row["spec"])
+        network = agent_row["network"]
+
+        # Run stress suite
+        suite = StressTestSuite(network=network, agent_spec=spec, agent_id=agent_id)
+        suite_result = await suite.run_full_suite()
+
+        # Serialize results
+        results_payload = [
+            {
+                "test_name": r.test_name,
+                "passed": r.passed,
+                "verdict": r.verdict,
+                "failure_injected": r.failure_injected,
+                "duration_ms": r.duration_ms,
+                "error": r.error,
+                "gas_cost_eth": r.simulation_report.get("gas_cost_eth"),
+                "net_pnl_usd": r.simulation_report.get("net_pnl_usd"),
+                "slippage_detected": r.simulation_report.get("slippage_detected"),
+                "revert_reason": r.simulation_report.get("revert_reason"),
+                "mev_risk": r.simulation_report.get("timeboost_mev_telemetry", {}).get("mev_sandwich_risk_score"),
+            }
+            for r in suite_result.results
+        ]
+
+        final_status = "PASSED" if suite_result.passed_all else "FAILED"
+
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE stress_tests
+                SET status = $1, results = $2, passed_all = $3, score = $4, updated_at = NOW()
+                WHERE id = $5
+            """, final_status, json.dumps(results_payload),
+                suite_result.passed_all, suite_result.score, stress_test_id)
+
+            await conn.execute("""
+                UPDATE agents SET stress_status = $1, updated_at = NOW() WHERE id = $2
+            """, final_status, agent_id)
+
+            await conn.execute("""
+                UPDATE stress_test_queue
+                SET status = 'DONE', finished_at = NOW()
+                WHERE id = $1
+            """, queue_id)
+
+        print(f"[StressTest] Done. agent={agent_id} score={suite_result.score} passed={suite_result.passed_all}")
+
+    except Exception as exc:
+        print(f"[StressTest] ERROR agent={agent_id}: {exc}")
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE stress_tests SET status = 'ERROR', updated_at = NOW() WHERE id = $1
+            """, stress_test_id)
+            await conn.execute("""
+                UPDATE agents SET stress_status = 'ERROR', updated_at = NOW() WHERE id = $1
+            """, agent_id)
+            await conn.execute("""
+                UPDATE stress_test_queue SET status = 'ERROR', finished_at = NOW() WHERE id = $1
+            """, queue_id)
+
+
 async def main_loop() -> None:
     print("Starting ArbiSim Guard simulation worker daemon...")
     await setup_db_tables()
 
     reclaim_tick = 0
     while True:
-        # Try to claim a simulation job first
+        # Priority order: simulation -> backtest -> stress_test
         job = await poll_and_claim_job()
         if job:
             await process_job(job)
         else:
-            # No simulation job — try to claim a backtest job
             bt = await poll_and_claim_backtest()
             if bt:
                 await process_backtest(bt)
             else:
-                await asyncio.sleep(1.0)
+                # Try stress test queue
+                st = await poll_and_claim_stress_test()
+                if st:
+                    await process_stress_test(st)
+                else:
+                    await asyncio.sleep(1.0)
 
         # Reclaim stale jobs every 60 seconds
         reclaim_tick += 1
         if reclaim_tick >= 60:
             await reclaim_stale_jobs()
             await reclaim_stale_backtests()
+            await reclaim_stale_stress_tests()
             reclaim_tick = 0
 
 
@@ -424,3 +555,4 @@ if __name__ == "__main__":
         asyncio.run(_run())
     except KeyboardInterrupt:
         print("\nStopping worker daemon.")
+

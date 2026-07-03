@@ -3,11 +3,49 @@ import socket
 import asyncio
 import subprocess
 import time
+import threading
 from dotenv import load_dotenv
 
 from chain_config import get_chain
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../..', '.env'))
+
+
+# ── RPC Pool: round-robin across multiple Avalanche endpoints ─────────────────
+# Public api.avax.network throttles at ~50 req/sec. Under high simulation load
+# (6 Anvil forks in sequence per stress test) this ceiling gets hit.
+# Set AVALANCHE_MAINNET_RPC_2 / _3 (Ankr, Infura, dRPC) as backup endpoints.
+_RPC_COUNTER_LOCK = threading.Lock()
+_rpc_counters: dict[str, int] = {}
+
+_RPC_POOLS: dict[str, list[str]] = {
+    "avalanche-mainnet": [
+        u for u in [
+            os.getenv("AVALANCHE_MAINNET_RPC", "https://api.avax.network/ext/bc/C/rpc"),
+            os.getenv("AVALANCHE_MAINNET_RPC_2", ""),
+            os.getenv("AVALANCHE_MAINNET_RPC_3", ""),
+        ] if u
+    ],
+    "avalanche-fuji": [
+        u for u in [
+            os.getenv("AVALANCHE_FUJI_RPC", "https://api.avax-test.network/ext/bc/C/rpc"),
+            os.getenv("AVALANCHE_FUJI_RPC_2", ""),
+        ] if u
+    ],
+}
+
+
+def get_rpc_url(network: str, chain_rpc: str) -> str:
+    """Returns the next RPC URL from the pool for Avalanche networks.
+    Falls back to chain_rpc for all other networks."""
+    pool = _RPC_POOLS.get(network)
+    if not pool:
+        return chain_rpc
+    with _RPC_COUNTER_LOCK:
+        idx = _rpc_counters.get(network, 0)
+        _rpc_counters[network] = (idx + 1) % len(pool)
+    return pool[idx % len(pool)]
+
 
 
 def find_free_port(start: int = 8545, end: int = 8600) -> int:
@@ -30,7 +68,8 @@ class AnvilForkInstance:
         chain = get_chain(network)  # raises ValueError for unknown networks
         self.network = network
         self.chain_id = chain.chain_id
-        self.rpc_url = chain.rpc_url
+        # Use RPC pool for Avalanche; single endpoint for all other chains
+        self.rpc_url = get_rpc_url(network, chain.rpc_url)
         self.block_number = block_number
         self.port = None
         self.process = None

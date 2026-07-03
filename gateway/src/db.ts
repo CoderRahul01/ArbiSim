@@ -174,7 +174,66 @@ export async function initDb(): Promise<void> {
       )
     `);
 
+    // ── Agent Studio Tables ───────────────────────────────────────────────────
+
+    // agents: stores agent specs and their deployment + stress test state
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS agents (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        api_key_id      TEXT NOT NULL,
+        owner_address   VARCHAR(42) NOT NULL,
+        name            VARCHAR(100) NOT NULL,
+        description     TEXT,
+        network         VARCHAR(50) NOT NULL,
+        spec            JSONB NOT NULL,
+        stress_status   VARCHAR(20) DEFAULT 'NOT_STARTED',
+        latest_stress_id UUID,
+        deployment_tx   VARCHAR(66),
+        deployed_at     TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      'CREATE INDEX IF NOT EXISTS agents_key_idx ON agents (api_key_id, created_at DESC)'
+    );
+
+    // stress_tests: each run of the 6-test suite for an agent
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS stress_tests (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        agent_id    UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        status      VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+        results     JSONB,
+        passed_all  BOOLEAN,
+        score       VARCHAR(10),
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      'CREATE INDEX IF NOT EXISTS st_agent_idx ON stress_tests (agent_id, created_at DESC)'
+    );
+
+    // stress_test_queue: async worker pickup using FOR UPDATE SKIP LOCKED
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS stress_test_queue (
+        id              SERIAL PRIMARY KEY,
+        stress_test_id  UUID NOT NULL REFERENCES stress_tests(id) ON DELETE CASCADE,
+        agent_id        UUID NOT NULL,
+        status          VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+        worker_id       TEXT,
+        claimed_at      TIMESTAMPTZ,
+        finished_at     TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      'CREATE INDEX IF NOT EXISTS stq_status_idx ON stress_test_queue (status, created_at ASC)'
+    );
+
     await client.query('COMMIT');
+
     console.log('PostgreSQL schemas initialized successfully.');
   } catch (error) {
     await client.query('ROLLBACK');

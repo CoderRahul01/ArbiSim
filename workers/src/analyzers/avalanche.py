@@ -72,18 +72,34 @@ class AvalancheAnalyzer(ChainAnalyzer):
     def compute_gas(self, gas_used: int, transactions: list, struct_logs: list,
                     host_io_penalty: float, w3) -> GasReport:
         """
-        Clean EIP-1559 — no L1 calldata component, no Brotli compression.
-        total_fee = gas_used * effectiveGasPrice (from latest block)
+        EIP-1559 C-Chain gas — no L1 calldata component, no Brotli compression.
+        effectiveGasPrice = baseFeePerGas (from latest block header) + maxPriorityFeePerGas.
+        Minimum base fee on Avalanche C-Chain: 25 nAVAX = 25_000_000_000 wei.
         """
-        gas_price = w3.eth.gas_price
-        total_fee_wei = gas_used * gas_price
+        try:
+            latest = w3.eth.get_block("latest")
+            base_fee = latest.get("baseFeePerGas", 25_000_000_000)  # 25 nAVAX floor
+        except Exception:
+            base_fee = 25_000_000_000
 
-        avax_price_usd = self._get_avax_price(w3, None)
+        # Read maxPriorityFeePerGas from the first tx if provided, else default 1 nAVAX
+        max_priority = 1_000_000_000  # 1 nAVAX
+        if transactions:
+            raw = transactions[0].get("maxPriorityFeePerGas", "0x0")
+            try:
+                max_priority = int(raw, 16) if isinstance(raw, str) and raw.startswith("0x") else int(raw)
+            except (ValueError, TypeError):
+                pass
+
+        effective_gas_price = base_fee + max_priority
+        total_fee_wei = gas_used * effective_gas_price
+
+        avax_price_usd = self.get_price_usd("AVAX", w3)
         total_fee_usd = (total_fee_wei / 1e18) * avax_price_usd if avax_price_usd else None
 
         return GasReport(
             gas_used=gas_used,
-            gas_price_wei=gas_price,
+            gas_price_wei=effective_gas_price,
             total_fee_wei=total_fee_wei,
             total_fee_usd=total_fee_usd,
             l1_fee_wei=None,
@@ -127,7 +143,28 @@ class AvalancheAnalyzer(ChainAnalyzer):
         return AVALANCHE_TOKENS
 
     def get_price_usd(self, symbol: str, w3) -> float:
-        fallbacks = {"AVAX": 30.0, "USDC": 1.0, "WETH.e": 3500.0, "WBTC.e": 65000.0}
+        """
+        Returns USD price for the given symbol.
+        For AVAX: queries the live Chainlink AVAX/USD feed on C-Chain (mainnet or Fuji).
+        Chainlink AVAX/USD mainnet: 0x0A77230d17318075983913bC2145DB16C7366156
+        Chainlink AVAX/USD Fuji:    0x5498BB86BC934c8D34FDA08E81D444153d0D06aD
+        """
+        if symbol == "AVAX":
+            try:
+                chain_id = w3.eth.chain_id
+                feed_addr = (
+                    "0x0A77230d17318075983913bC2145DB16C7366156" if chain_id == 43114
+                    else "0x5498BB86BC934c8D34FDA08E81D444153d0D06aD"
+                )
+                feed = w3.eth.contract(
+                    address=Web3.to_checksum_address(feed_addr),
+                    abi=CHAINLINK_AGGREGATOR_ABI,
+                )
+                _, answer, _, _, _ = feed.functions.latestRoundData().call()
+                return float(answer) / 1e8
+            except Exception:
+                return 28.0  # Safe fallback if Chainlink call fails
+        fallbacks = {"USDC": 1.0, "WETH.e": 3500.0, "WBTC.e": 65000.0}
         return fallbacks.get(symbol, 0.0)
 
     def chain_specific_report(self, transactions: list, chain_config, w3=None) -> dict:

@@ -27,9 +27,18 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return;
   }
 
+  // Guest / Demo key bypass — instant out-of-the-box usage for public visitors
+  if (rawKey === 'demo' || rawKey === 'guest' || rawKey.startsWith('demo_') || rawKey.startsWith('guest_')) {
+    (req as any).tier = 'developer';
+    (req as any).apiKeyId = 'guest_demo_user';
+    next();
+    return;
+  }
+
   // Admin bypass — single secret for gateway-internal and admin UI calls
   if (config.api.adminKey && rawKey === config.api.adminKey) {
     (req as any).tier = 'admin';
+    (req as any).apiKeyId = 'admin_user';
     next();
     return;
   }

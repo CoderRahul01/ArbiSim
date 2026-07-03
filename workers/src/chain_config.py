@@ -92,7 +92,10 @@ CHAIN_REGISTRY: dict[str, ChainConfig] = {
         block_explorer="https://subnets.avax.network/c-chain",
         native_token="AVAX",
         native_token_usd_feed="0x0A77230d17318075983913bC2145DB16C7366156",
-        registry_address=os.getenv("AVALANCHE_MAINNET_REGISTRY"),
+        registry_address=os.getenv(
+            "AVALANCHE_MAINNET_REGISTRY",
+            "0xb947B914fCb605D114E9f3C784a3fdE20B3f5CCc",
+        ),
         testnet=False,
         analyzer_class="AvalancheAnalyzer",
         known_dex_routers=[

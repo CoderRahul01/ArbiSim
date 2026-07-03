@@ -61,7 +61,7 @@ export const CHAIN_REGISTRY: Record<string, ChainConfig> = {
     blockExplorer: 'https://subnets.avax.network/c-chain',
     nativeToken: 'AVAX',
     testnet: false,
-    registryAddress: process.env.AVALANCHE_MAINNET_REGISTRY,
+    registryAddress: process.env.AVALANCHE_MAINNET_REGISTRY ?? '0xb947B914fCb605D114E9f3C784a3fdE20B3f5CCc',
     features: { timeboost: false, stylus: false, l1DataFee: false, warpMessaging: true, erc8004: true },
   },
 
