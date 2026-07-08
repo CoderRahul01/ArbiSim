@@ -19,6 +19,7 @@ import webhookRouter from './routes/webhooks.js';
 import nowPaymentsRouter from './routes/nowpayments.js';
 import circleRouter from './routes/circle.js';
 import agentsRouter from './routes/agents.js';
+import verifyRouter from './routes/verify.js';
 import { requireAuth } from './middleware/auth.js';
 import { x402Middleware } from './middleware/x402.js';
 import { initDb } from './db.js';
@@ -47,6 +48,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // Public simulation permalink routes (no auth)
 app.use('/api/v1/sim', publicRouter);
+app.use('/api/v1/verdicts', verifyRouter);
 
 // Public payment webhooks (no auth)
 app.use('/api/v1/public/webhooks', nowPaymentsRouter);

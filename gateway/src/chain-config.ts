@@ -22,6 +22,7 @@ export interface ChainConfig {
   nativeToken: string;
   testnet: boolean;
   registryAddress?: string;
+  registryVersion: number;
   features: ChainFeatures;
 }
 
@@ -37,6 +38,7 @@ export const CHAIN_REGISTRY: Record<string, ChainConfig> = {
     nativeToken: 'ETH',
     testnet: false,
     registryAddress: process.env.SIMULATION_REGISTRY_ADDRESS ?? '0x9784f7cA750f1301a2090eaDF8f27F78B1A326b2',
+    registryVersion: 2,
     features: { timeboost: true, stylus: true, l1DataFee: true, warpMessaging: false, erc8004: false },
   },
 
@@ -49,6 +51,7 @@ export const CHAIN_REGISTRY: Record<string, ChainConfig> = {
     nativeToken: 'ETH',
     testnet: true,
     registryAddress: process.env.ARBITRUM_SEPOLIA_REGISTRY ?? '0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32',
+    registryVersion: 2,
     features: { timeboost: false, stylus: true, l1DataFee: true, warpMessaging: false, erc8004: false },
   },
 
@@ -62,6 +65,7 @@ export const CHAIN_REGISTRY: Record<string, ChainConfig> = {
     nativeToken: 'AVAX',
     testnet: false,
     registryAddress: process.env.AVALANCHE_MAINNET_REGISTRY ?? '0xb947B914fCb605D114E9f3C784a3fdE20B3f5CCc',
+    registryVersion: 2,
     features: { timeboost: false, stylus: false, l1DataFee: false, warpMessaging: true, erc8004: true },
   },
 
@@ -74,6 +78,7 @@ export const CHAIN_REGISTRY: Record<string, ChainConfig> = {
     nativeToken: 'AVAX',
     testnet: true,
     registryAddress: process.env.AVALANCHE_FUJI_REGISTRY,
+    registryVersion: 3,
     features: { timeboost: false, stylus: false, l1DataFee: false, warpMessaging: true, erc8004: true },
   },
 
@@ -86,6 +91,7 @@ export const CHAIN_REGISTRY: Record<string, ChainConfig> = {
     blockExplorer: '',
     nativeToken: 'ETH',
     testnet: true,
+    registryVersion: 2,
     features: { timeboost: false, stylus: false, l1DataFee: true, warpMessaging: false, erc8004: false },
   },
 };

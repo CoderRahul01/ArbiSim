@@ -29,7 +29,7 @@ async function runDemo() {
   console.log("---------------------------------------------------------------");
 
   const expiredUserOp = {
-    sender: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", // Vitalik
+    sender: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", // Anvil Account #1
     nonce: "0x0",
     initCode: "0x",
     callData: "0x",
@@ -48,7 +48,7 @@ async function runDemo() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         network: "arbitrum-one",
-        agent_address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+        agent_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
         userOp: expiredUserOp,
         entrypointVersion: "v0.6",
         max_slippage_tolerance: 0.5
@@ -92,7 +92,7 @@ async function runDemo() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         network: "arbitrum-one",
-        agent_address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+        agent_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
         transactions: validTxs,
         max_slippage_tolerance: 0.5
       })

@@ -119,5 +119,6 @@ The tool description is loaded into the agent's context — see [`mcp/preflight-
 - [Architecture — LLD](./architecture/lld.md)
 - [Request lifecycle — sequence diagrams](./architecture/request-lifecycle.md)
 - [`preflight_simulate` MCP spec](./mcp/preflight-simulate.md)
+- [Trust Portal & Verification](./trust-portal.md)
 - [Error catalog (RFC 9457)](./errors.md)
 - [OpenAPI 3.1 spec](./api/openapi.yaml)

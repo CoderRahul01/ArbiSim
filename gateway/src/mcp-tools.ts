@@ -172,11 +172,13 @@ export async function callMcpTool(
     try {
       const sessionId = uuidv4();
       await submitSimulationJob(sessionId, network, agent_address, transactions, max_slippage_tolerance);
+      const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://arbisim-guard.vercel.app';
       return {
         result: {
           session_id: sessionId,
           status: '202 Accepted',
           message: 'Simulation queued. Poll get_simulation_status with this session_id.',
+          trust_url: `${SITE_URL}/trust/${sessionId}`,
         },
       };
     } catch (err: any) {
@@ -197,12 +199,14 @@ export async function callMcpTool(
       } catch {}
 
       const telemetry = mongoRecord || pgRecord.telemetry;
+      const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://arbisim-guard.vercel.app';
       return {
         result: {
           session_id: pgRecord.session_id,
           network: pgRecord.network,
           agent_address: pgRecord.agent_address,
           status: pgRecord.status,
+          trust_url: `${SITE_URL}/trust/${pgRecord.session_id}`,
           created_at: pgRecord.created_at,
           updated_at: pgRecord.updated_at,
           telemetry: telemetry ? {
@@ -290,12 +294,14 @@ export async function callMcpTool(
     try {
       const sessionId = uuidv4();
       await submitSimulationJob(sessionId, network, from_address, transactions, 0, apiKeyId ?? null);
+      const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://arbisim-guard.vercel.app';
       return {
         result: {
           session_id: sessionId,
           simulation_type: 'x402_payment',
           status: 'PENDING',
           message: 'x402 payment simulation queued. Poll get_simulation_status with this session_id. Check flags.low_agent_reputation and flags.x402_payment_risk in the result.',
+          trust_url: `${SITE_URL}/trust/${sessionId}`,
           erc8004_check,
         },
       };

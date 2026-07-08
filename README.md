@@ -281,30 +281,39 @@ ArbiSim/
 | [OpenAPI 3.1](./docs/api/openapi.yaml) | REST API spec, single source of truth for SDK generation |
 | [Error Catalog](./docs/errors.md) | RFC 9457 Problem Details, REJECTED is not an error |
 | [Quickstart](./docs/quickstart.md) | 5 minutes from install to first verdict |
+| [Trust Portal & Verification](./docs/trust-portal.md) | Immutable safety logging, public attestation feed, client-side browser checks, and the evidence API |
 | [Dashboard Roadmap](./docs/dashboard-roadmap.md) | Phased feature plan: activation, retention, grant alignment |
 
-## On-Chain Contract
+## On-Chain Trust & Verification
 
-The `SimulationRegistry` is an immutable on-chain audit trail of simulation verdicts. Deployed on Arbitrum Sepolia.
+ArbiSim Guard implements a decentralized trust layer to cryptographically verify safety verdicts. Every simulation publishes its core verdict details on-chain to the `SimulationRegistry` contract, binding the exact evidence logs behind the verdict.
 
-**Contract:** [`SimulationRegistry.sol`](./contracts/SimulationRegistry.sol)
-**Deployed Address:** [`0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32`](https://sepolia.arbiscan.io/address/0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32)
+### Deployed Registry Contracts
 
-| Feature | Detail |
-|---|---|
-| Access control | OpenZeppelin `Ownable` |
-| Emergency stop | OpenZeppelin `Pausable` |
-| Reentrancy protection | OpenZeppelin `ReentrancyGuard` |
-| Safety flags | Packed uint8 bitmap (8 independent flags) |
-| Batch logging | Up to 50 records per transaction |
-| Idempotency | Write-once per session ID |
-| Events | Indexed `SimulationLogged` for off-chain indexing |
+| Network | Version | Contract Address | Explorer Link |
+|---|---|---|---|
+| **Avalanche Fuji Testnet** | V3 | `0xe940d0f71718F3deaff790d7DC53C775B07E3c54` | [Snowtrace](https://testnet.snowtrace.io/address/0xe940d0f71718F3deaff790d7DC53C775B07E3c54) |
+| **Arbitrum Sepolia** | V2 | `0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32` | [Arbiscan](https://sepolia.arbiscan.io/address/0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32) |
+
+### Version 3 Protocol Upgrade
+V3 contracts introduce an `evidenceHash` parameter (`bytes32` Keccak-256 of the sorted evidence report JSON). This binds the analytical findings on-chain:
+- **Contract:** [`SimulationRegistryV3.sol`](./contracts/SimulationRegistryV3.sol)
+- **Method Signature:** `logSimulation(bytes32 sessionId, address agent, bytes32 txHash, bool safeToExecute, uint16 flagsBitmap, uint64 gasEstimate, string revertReason, uint32 chainId, bytes32 evidenceHash)`
+
+### Public Trust Portal
+A read-only transparency dashboard allows anyone to inspect the safety feed:
+- **`/trust`**: Lightweight, cached (30s) feed showing all recent attestations, counts, and active chains.
+- **`/trust/[sessionId]`**: Complete audit page verifying the simulation verdict. Compares the off-chain Postgres record against the on-chain registry logs, verifying the Keccak-256 hash match on-chain.
+- **`/methodology`**: Overview of safety heuristic checks, bitmasks, and threat detection mechanisms.
+
+### Public Evidence Audit API
+- **`GET /api/v1/verdicts/:sessionId/evidence`**: Retrieve structural audit details, including the evidence report list, the canonical evidence hash, and the on-chain transaction hash.
 
 Deploy with Foundry:
 
 ```bash
-forge script script/Deploy.s.sol:DeploySimulationRegistry \
-  --rpc-url $ARBITRUM_SEPOLIA_RPC \
+forge script script/DeployV3.s.sol:DeploySimulationRegistryV3 \
+  --rpc-url $AVALANCHE_FUJI_RPC \
   --private-key $DEPLOYER_PRIVATE_KEY \
   --broadcast
 ```

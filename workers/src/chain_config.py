@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../..', '.env'))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
 
 
 @dataclass
@@ -24,6 +24,7 @@ class ChainConfig:
     registry_address: Optional[str]
     testnet: bool
     analyzer_class: str
+    registry_version: int = 2
     known_dex_routers: list = field(default_factory=list)
     extra: dict = field(default_factory=dict)
 
@@ -126,6 +127,7 @@ CHAIN_REGISTRY: dict[str, ChainConfig] = {
         registry_address=os.getenv("AVALANCHE_FUJI_REGISTRY"),
         testnet=True,
         analyzer_class="AvalancheAnalyzer",
+        registry_version=3,
         known_dex_routers=[],
         extra={
             "timeboost_enabled": False,

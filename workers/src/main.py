@@ -6,6 +6,8 @@ import posthog as _posthog
 from aiohttp import web
 from dotenv import load_dotenv
 
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
+
 from simulation_engine import AnvilForkInstance
 from analytical_brain import AnalyticalBrain
 from storage import save_telemetry
@@ -14,8 +16,7 @@ from chain_config import get_chain
 from backtest_runner import run_backtest
 from webhook_delivery import deliver_webhook
 from stress_test_engine import StressTestSuite
-
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
+from evidence_builder import build_evidence_report, get_canonical_evidence_hash
 
 _posthog.project_api_key = os.getenv("POSTHOG_API_KEY", "")
 _posthog.host = "https://us.i.posthog.com"
@@ -90,6 +91,9 @@ async def setup_db_tables() -> None:
             "ALTER TABLE simulation_queue ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ",
             "ALTER TABLE simulation_queue ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ",
             "ALTER TABLE simulation_queue ADD COLUMN IF NOT EXISTS visibility_timeout TIMESTAMPTZ",
+            "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS evidence_report JSONB",
+            "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS evidence_hash VARCHAR(66)",
+            "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS onchain_tx_hash VARCHAR(66)",
         ]:
             await conn.execute(col_sql)
         await conn.execute(
@@ -152,15 +156,25 @@ async def mark_job_done(job_id: int, status: str) -> None:
         """, status, job_id)
 
 
-async def update_simulation(session_id: str, status: str, telemetry: dict) -> None:
+async def update_simulation(session_id: str, status: str, telemetry: dict, evidence_report: list = None, evidence_hash: str = None) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("""
             UPDATE simulations
-            SET status = $1, telemetry = $2, updated_at = NOW()
-            WHERE session_id = $3
-        """, status, json.dumps(telemetry), session_id)
+            SET status = $1, telemetry = $2, evidence_report = $3, evidence_hash = $4, updated_at = NOW()
+            WHERE session_id = $5
+        """, status, json.dumps(telemetry), json.dumps(evidence_report) if evidence_report else None, evidence_hash, session_id)
     print(f"Simulation {session_id} → {status}")
+
+
+async def update_simulation_registry_tx(session_id: str, onchain_tx_hash: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE simulations
+            SET onchain_tx_hash = $1, updated_at = NOW()
+            WHERE session_id = $2
+        """, onchain_tx_hash, session_id)
 
 
 async def reclaim_stale_jobs() -> None:
@@ -319,8 +333,14 @@ async def process_job(job: dict) -> None:
         except Exception as mongo_err:
             print(f"[{session_id}] MongoDB write warning: {mongo_err}")
 
+        # Build evidence report and hash
+        evidence_report = build_evidence_report(results)
+        evidence_hash = get_canonical_evidence_hash(evidence_report)
+        results["evidence_report"] = evidence_report
+        results["evidence_hash"] = evidence_hash
+
         # Update Neon state — results["status"] is already APPROVED or REJECTED
-        await update_simulation(session_id, results["status"], results)
+        await update_simulation(session_id, results["status"], results, evidence_report, evidence_hash)
         await mark_job_done(job["id"], "COMPLETED")
         _track(session_id, network, agent_address, results)
 
@@ -329,7 +349,9 @@ async def process_job(job: dict) -> None:
         await deliver_webhook(session_id, results["status"], results, pool)
 
         # Write verdict to SimulationRegistry.sol on the simulation chain (non-blocking)
-        await log_simulation_to_chain(session_id, results, chain_id=chain.chain_id)
+        onchain_tx = await log_simulation_to_chain(session_id, results, chain_id=chain.chain_id)
+        if onchain_tx:
+            await update_simulation_registry_tx(session_id, onchain_tx)
 
     except Exception as err:
         print(f"[{session_id}] Exception: {err}")
@@ -345,7 +367,18 @@ async def process_job(job: dict) -> None:
             "gas_breakdown": {},
             "execution_traces": [],
         }
-        await update_simulation(session_id, "REJECTED", err_telemetry)
+        err_evidence = [{
+            "flag": "revert",
+            "label": "Execution Revert",
+            "finding": f"Simulation failed with exception: {str(err)}",
+            "source": "Isolated EVM simulation",
+            "severity": "high"
+        }]
+        err_hash = get_canonical_evidence_hash(err_evidence)
+        err_telemetry["evidence_report"] = err_evidence
+        err_telemetry["evidence_hash"] = err_hash
+
+        await update_simulation(session_id, "REJECTED", err_telemetry, err_evidence, err_hash)
         await mark_job_done(job["id"], "FAILED")
         _track(session_id, network, agent_address, err_telemetry)
         

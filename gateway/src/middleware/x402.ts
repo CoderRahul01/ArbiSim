@@ -34,6 +34,46 @@ export const circleGatewayMiddleware = createGatewayMiddleware({
  * to execute pre-flight simulations on demand by attaching an `X-402-Payment` header.
  */
 export async function x402Middleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // Validate and bypass for public Verdicts API routes
+  if (req.path.startsWith('/api/v1/verdicts/')) {
+    if (req.path === '/api/v1/verdicts/trust-feed') {
+      next();
+      return;
+    }
+    const match = req.path.match(/^\/api\/v1\/verdicts\/([^/]+)\/evidence$/i);
+    if (match) {
+      const sessionId = match[1];
+      if (!uuidRegex.test(sessionId)) {
+        res.status(400).json({ error: { code: 'INVALID_SESSION_ID', message: 'Session ID must be a valid UUID.' } });
+        return;
+      }
+      next();
+      return;
+    }
+  }
+
+  // Validate and bypass for public Sim permalink API routes
+  if (req.path.startsWith('/api/v1/sim/')) {
+    const match = req.path.match(/^\/api\/v1\/sim\/([^/]+)$/i);
+    if (match) {
+      const sessionId = match[1];
+      if (!uuidRegex.test(sessionId)) {
+        res.status(400).json({ error: { code: 'INVALID_SESSION_ID', message: 'Session ID must be a valid UUID.' } });
+        return;
+      }
+      next();
+      return;
+    }
+  }
+
+  // Bypass for health / ping endpoints
+  if (req.path === '/ping' || req.path === '/health') {
+    next();
+    return;
+  }
+
   const x402Header = req.headers['x-402-payment'] || req.headers['authorization'];
 
   // Check if request carries an x402 nanopayment header

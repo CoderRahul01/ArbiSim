@@ -24,8 +24,8 @@ async def run_test():
         rpc_url = await anvil_instance.start()
         print("Anvil fork started successfully.")
         
-        # Vitalik as the EOA agent/bundler
-        agent_address = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+        # Anvil Account #1 as the EOA agent/bundler
+        agent_address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
         
         # Define a mock EntryPoint v0.6 UserOperation
         # This userop has a dummy signature and is not deployed, so Entrypoint will revert,

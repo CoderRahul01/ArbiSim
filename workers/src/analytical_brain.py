@@ -309,7 +309,7 @@ class AnalyticalBrain:
                 else:
                     formatted_op[k] = v
 
-            executor_address = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+            executor_address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
             self.w3.provider.make_request("anvil_impersonateAccount", [executor_address])
             self.w3.provider.make_request("anvil_setBalance", [executor_address, "0x56BC75E2D63100000"])
 

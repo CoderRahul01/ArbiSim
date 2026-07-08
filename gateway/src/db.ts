@@ -59,6 +59,9 @@ export async function initDb(): Promise<void> {
     await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS api_key_id TEXT`);
     await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS owner_address VARCHAR(42)`);
     await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS rewards_processed BOOLEAN DEFAULT FALSE`);
+    await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS evidence_report JSONB`);
+    await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS evidence_hash VARCHAR(66)`);
+    await client.query(`ALTER TABLE simulations ADD COLUMN IF NOT EXISTS onchain_tx_hash VARCHAR(66)`);
 
     // Create database-backed queue table
     await client.query(`
@@ -261,6 +264,9 @@ export interface SimulationRow {
   api_key_id?: string | null;
   owner_address?: string | null;
   rewards_processed?: boolean;
+  evidence_report?: any;
+  evidence_hash?: string | null;
+  onchain_tx_hash?: string | null;
   created_at: Date;
   updated_at: Date;
 }

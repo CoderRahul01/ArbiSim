@@ -27,7 +27,7 @@ async def run_test():
         
         # We need an agent address (e.g. a random active address on Arbitrum)
         # We will use a known active account for testing, e.g., a Uniswap router or standard EOA
-        agent_address = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" # vitalik.eth
+        agent_address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" # Anvil Account #1
         
         # Let's verify a standard transaction batch
         # 1. Transfer some ETH from Vitalik to a random receiver

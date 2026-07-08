@@ -247,9 +247,11 @@ router.post('/simulate', async (req: Request, res: Response): Promise<void> => {
       [JSON.stringify(queuePayload), sessionId]
     );
 
+    const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://arbisim-guard.vercel.app';
     res.status(202).json({
       session_id: sessionId,
       status: 'PENDING',
+      trust_url: `${SITE_URL}/trust/${sessionId}`,
     });
   } catch (error) {
     console.error('Failed to submit simulation job:', error);
@@ -1072,11 +1074,13 @@ router.post('/circle/policy-check', async (req: Request, res: Response): Promise
       console.warn('Circle Policy Check: Queue submission warning:', enqueueErr);
     }
 
+    const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://arbisim-guard.vercel.app';
     res.json({
       approved,
       policyId: 'pol_circle_arbisim_guard_v1',
       sessionId,
       reason,
+      trust_url: `${SITE_URL}/trust/${sessionId}`,
       telemetry: {
         network,
         x402Verified: !!(req as any).x402Payment?.verified,

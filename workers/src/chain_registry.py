@@ -37,6 +37,27 @@ REGISTRY_ABI = [
     }
 ]
 
+# ABI for SimulationRegistryV3.sol logSimulation()
+REGISTRY_ABI_V3 = [
+    {
+        "type": "function",
+        "name": "logSimulation",
+        "inputs": [
+            {"name": "sessionId",    "type": "bytes32"},
+            {"name": "agent",        "type": "address"},
+            {"name": "txHash",       "type": "bytes32"},
+            {"name": "safeToExecute","type": "bool"},
+            {"name": "flagsBitmap",  "type": "uint16"},
+            {"name": "gasEstimate",  "type": "uint64"},
+            {"name": "revertReason", "type": "string"},
+            {"name": "chainId",      "type": "uint32"},
+            {"name": "evidenceHash", "type": "bytes32"},
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable",
+    }
+]
+
 # Flag bit positions — must match SimulationRegistry.sol v2 FLAG_* constants (uint16)
 _FLAG_REVERT                 = 1 << 0
 _FLAG_HIGH_SLIPPAGE          = 1 << 1
@@ -137,9 +158,12 @@ def _sync_log(session_id: str, results: dict, chain_id: int) -> str:
     if not w3.is_connected():
         raise ConnectionError(f"Cannot connect to {chain.name} at {rpc_url}")
 
+    version = getattr(chain, "registry_version", 2)
+    abi = REGISTRY_ABI_V3 if version == 3 else REGISTRY_ABI
+
     contract = w3.eth.contract(
         address=Web3.to_checksum_address(registry_address),
-        abi=REGISTRY_ABI,
+        abi=abi,
     )
     account = w3.eth.account.from_key(private_key)
 
@@ -166,23 +190,46 @@ def _sync_log(session_id: str, results: dict, chain_id: int) -> str:
     priority = w3.to_wei("0.01", "gwei")
     max_fee = base_fee * 2 + priority
 
-    tx = contract.functions.logSimulation(
-        _uuid_to_bytes32(session_id),
-        agent,
-        tx_hash_bytes,
-        safe_to_execute,
-        flags,
-        gas_estimate,
-        revert_reason,
-        chain_id,
-    ).build_transaction({
-        "from":                 account.address,
-        "nonce":                w3.eth.get_transaction_count(account.address, "pending"),
-        "gas":                  200_000,
-        "maxFeePerGas":         max_fee,
-        "maxPriorityFeePerGas": priority,
-        "chainId":              chain_id,
-    })
+    if version == 3:
+        raw_evidence_hash = results.get("evidence_hash") or ("0x" + "0" * 64)
+        evidence_hash_bytes = bytes.fromhex(raw_evidence_hash.removeprefix("0x").zfill(64))
+
+        tx = contract.functions.logSimulation(
+            _uuid_to_bytes32(session_id),
+            agent,
+            tx_hash_bytes,
+            safe_to_execute,
+            flags,
+            gas_estimate,
+            revert_reason,
+            chain_id,
+            evidence_hash_bytes,
+        ).build_transaction({
+            "from":                 account.address,
+            "nonce":                w3.eth.get_transaction_count(account.address, "pending"),
+            "gas":                  220_000,
+            "maxFeePerGas":         max_fee,
+            "maxPriorityFeePerGas": priority,
+            "chainId":              chain_id,
+        })
+    else:
+        tx = contract.functions.logSimulation(
+            _uuid_to_bytes32(session_id),
+            agent,
+            tx_hash_bytes,
+            safe_to_execute,
+            flags,
+            gas_estimate,
+            revert_reason,
+            chain_id,
+        ).build_transaction({
+            "from":                 account.address,
+            "nonce":                w3.eth.get_transaction_count(account.address, "pending"),
+            "gas":                  200_000,
+            "maxFeePerGas":         max_fee,
+            "maxPriorityFeePerGas": priority,
+            "chainId":              chain_id,
+        })
 
     signed = w3.eth.account.sign_transaction(tx, private_key)
     tx_hash_out = w3.eth.send_raw_transaction(signed.raw_transaction)
@@ -195,7 +242,7 @@ def _sync_log(session_id: str, results: dict, chain_id: int) -> str:
 
 
 async def log_simulation_to_chain(session_id: str, results: dict,
-                                   chain_id: int = ARBITRUM_ONE_CHAIN_ID) -> None:
+                                   chain_id: int = ARBITRUM_ONE_CHAIN_ID) -> str | None:
     """
     Async wrapper — runs the blocking web3 call in the default executor.
     Defaults to Arbitrum One mainnet. Never raises; logs errors so the
@@ -205,8 +252,16 @@ async def log_simulation_to_chain(session_id: str, results: dict,
         tx_hash = await asyncio.get_event_loop().run_in_executor(
             None, _sync_log, session_id, results, chain_id
         )
+        print(f"[{session_id}] On-chain registry ✓  tx={tx_hash}")
         logger.info("[%s] On-chain registry ✓  tx=%s", session_id, tx_hash)
+        return tx_hash
     except EnvironmentError as exc:
+        print(f"[{session_id}] Registry skipped: {exc}")
         logger.warning("[%s] Registry skipped: %s", session_id, exc)
+        return None
     except Exception as exc:
+        print(f"[{session_id}] Registry write failed (non-fatal): {exc}")
         logger.error("[%s] Registry write failed (non-fatal): %s", session_id, exc)
+        import traceback
+        traceback.print_exc()
+        return None

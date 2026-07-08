@@ -154,8 +154,78 @@ paths:
           name: key_id
           required: true
           schema: { type: string, format: uuid }
-      responses:
         '204': { description: Revoked. }
+  /api/v1/verdicts/trust-feed:
+    get:
+      security: []
+      summary: Retrieve the public trust feed.
+      description: |
+        Returns the overall audit statistics, per-chain attestation counts, and
+        the top 15 visible simulation records. This endpoint does not require authentication and is backed by a 30s cache.
+      responses:
+        '200':
+          description: Public audit feed statistics and recent verdicts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalAttestations: { type: integer }
+                  countersByChain: { type: object, additionalProperties: { type: integer } }
+                  verdicts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sessionId: { type: string, format: uuid }
+                        agent: { type: string }
+                        safeToExecute: { type: boolean }
+                        flagsBitmap: { type: integer }
+                        chainId: { type: integer }
+                        blockNumber: { type: integer }
+                        transactionHash: { type: string }
+                        networkKey: { type: string }
+                        version: { type: integer }
+                        timestamp: { type: integer }
+  /api/v1/verdicts/{sessionId}/evidence:
+    get:
+      security: []
+      summary: Retrieve auditable proof and evidence report.
+      description: |
+        Returns the structured safety findings, the canonical evidence report hash,
+        and the on-chain registry transaction hash for a given simulation session.
+        Does not require authentication.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Detailed safety findings and cryptographic verification hashes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId: { type: string, format: uuid }
+                  network: { type: string }
+                  status: { type: string }
+                  evidenceReport:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        flag: { type: string }
+                        label: { type: string }
+                        finding: { type: string }
+                        source: { type: string }
+                        severity: { type: string }
+                  evidenceHash: { type: string }
+                  onchainTxHash: { type: string }
+                  createdAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
     ApiKeyAuth:
