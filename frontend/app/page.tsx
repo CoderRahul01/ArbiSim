@@ -62,14 +62,12 @@ export default function HomePage() {
           >
             Check an Agent — it&apos;s free
           </Link>
-          <a
-            href="https://github.com/CoderRahul01/ArbiSim"
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href="/docs"
             className="px-8 py-3.5 border border-border text-text-primary rounded-lg font-semibold text-base hover:bg-elevated hover:border-zinc-600 transition-all duration-200 active:scale-95"
           >
-            View on GitHub
-          </a>
+            Read the Docs
+          </Link>
         </div>
 
         <p className="text-xs text-text-tertiary">
@@ -209,15 +207,13 @@ export default function HomePage() {
                 verdict in under a second — no human in the loop. Every simulation is logged on-chain
                 so your users can verify your agent&apos;s safety record independently.
               </p>
-              <a
-                href="https://github.com/CoderRahul01/ArbiSim"
-                target="_blank"
-                rel="noreferrer"
+              <Link
+                href="/docs"
                 id="dev-card-cta"
                 className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-text-primary rounded-lg text-sm font-medium hover:bg-elevated hover:border-zinc-600 transition-all active:scale-95"
               >
                 Read the docs →
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -240,11 +236,11 @@ export default function HomePage() {
             Check an Agent — it&apos;s free →
           </Link>
           <div className="pt-4 flex justify-center gap-6 text-sm text-text-tertiary">
-            <a href="https://github.com/CoderRahul01/ArbiSim" target="_blank" rel="noreferrer" className="hover:text-text-secondary transition-colors">
-              GitHub
-            </a>
             <Link href="/docs" className="hover:text-text-secondary transition-colors">
               Docs
+            </Link>
+            <Link href="/methodology" className="hover:text-text-secondary transition-colors">
+              Methodology
             </Link>
             <a href="https://agents.injective.com/registry" target="_blank" rel="noreferrer" className="hover:text-[#A78BFA] transition-colors">
               Injective Registry ↗
