@@ -9,6 +9,47 @@ export default function ChainsPage() {
       <h1 className="text-3xl font-serif font-semibold text-text-primary mb-2">Supported chains</h1>
       <p className="text-text-secondary mb-8 leading-relaxed">ArbiSim Guard works across multiple EVM-compatible blockchains. Each chain has its own fork configuration, gas model, and supported features.</p>
 
+      {/* Injective — featured */}
+      <div className="rounded-xl border border-[#3B2D7A]/30 bg-[#1B1630]/5 overflow-hidden mb-6">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-[#3B2D7A]/20">
+          <span className="text-lg">⬡</span>
+          <div className="flex-1">
+            <h2 className="text-text-primary font-semibold">Injective EVM</h2>
+            <p className="text-[#A78BFA] text-xs font-mono">Supported by Injective Canonical ERC-8004 Registry</p>
+          </div>
+          <span className="text-xs font-mono px-2.5 py-1 rounded-full border border-[#3B2D7A] text-[#A78BFA]">Testnet live</span>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-text-secondary text-sm leading-relaxed">Injective EVM (chain ID 1439) is a Cosmos-compatible EVM chain featuring built-in Frequent Batch Auctions (FBA) at the protocol level for MEV resistance and order-book trading. ArbiSim Guard queries the real on-chain Injective IdentityRegistry and ReputationRegistry, and cross-links safety checks directly with the agent registry.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {[
+              { label: 'Testnet network ID', value: '"injective-testnet"' },
+              { label: 'Mainnet network ID', value: '"injective-mainnet" (coming soon)' },
+              { label: 'Injective Testnet ID', value: '1439' },
+              { label: 'Status', value: '✓ Testnet live' },
+            ].map(item => (
+              <div key={item.label} className="flex justify-between items-center py-2 border-b border-border/50">
+                <span className="text-text-tertiary text-xs">{item.label}</span>
+                <code className="text-text-secondary text-xs font-mono">{item.value}</code>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-lg border border-border bg-surface p-4">
+            <p className="text-xs font-mono text-text-tertiary mb-2">Example simulation request (Injective Testnet)</p>
+            <pre className="text-xs font-mono text-text-secondary overflow-x-auto">{`{
+  "network": "injective-testnet",
+  "agent_address": "0x...",
+  "transactions": [...],
+  "max_slippage_tolerance": 0.5
+}`}</pre>
+          </div>
+          <div className="text-xs text-text-tertiary space-y-1">
+            <p>Pyth INJ/USD pull oracle feed (ID 0x7a5b...) is configured for price calculations.</p>
+            <p>Identity registry checks for ERC-8004 compliance are deterministic across networks.</p>
+          </div>
+        </div>
+      </div>
+
       {/* Avalanche — featured */}
       <div className="rounded-xl border border-red-500/30 bg-red-500/5 overflow-hidden mb-6">
         <div className="flex items-center gap-3 px-5 py-4 border-b border-red-500/20">

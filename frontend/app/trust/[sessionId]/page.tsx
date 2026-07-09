@@ -8,6 +8,7 @@ import {
   FLAG_LABELS,
   REGISTRY_ADDRESSES,
   getCanonicalEvidenceHash,
+  getInjectiveAgentProfileUrl,
 } from '@/lib/trust-utils';
 
 interface EvidenceItem {
@@ -33,6 +34,8 @@ const CHAIN_DISPLAY_NAMES: Record<string, string> = {
   'arbitrum-sepolia': 'Arbitrum Sepolia',
   'avalanche-mainnet': 'Avalanche C-Chain',
   'avalanche-fuji': 'Avalanche Fuji',
+  'injective-testnet': 'Injective EVM Testnet',
+  'injective-mainnet': 'Injective EVM Mainnet',
 };
 
 const EXPLORERS: Record<string, string> = {
@@ -40,6 +43,8 @@ const EXPLORERS: Record<string, string> = {
   'arbitrum-sepolia': 'https://sepolia.arbiscan.io',
   'avalanche-mainnet': 'https://subnets.avax.network/c-chain',
   'avalanche-fuji': 'https://subnets-test.avax.network/c-chain',
+  'injective-testnet': 'https://testnet.blockscout.injective.network',
+  'injective-mainnet': 'https://blockscout.injective.network',
 };
 
 export default function VerdictDetailPage() {
@@ -272,9 +277,90 @@ export default function VerdictDetailPage() {
               </div>
             </div>
 
+            {/* Injective ERC-8004 Agent Identity Cross-Link */}
+            {data.network && data.network.startsWith('injective') && (() => {
+              const chainExtras = (data as any).chainExtras || {};
+              const agentAddress: string | null = chainExtras.erc8004_payee || null;
+              const isRegistered: boolean = !!chainExtras.erc8004_is_registered;
+              const feedbackCount: number | null = chainExtras.erc8004_feedback_count ?? null;
+              const profileUrls = getInjectiveAgentProfileUrl(agentAddress, data.network);
+
+              if (!profileUrls) return null;
+
+              return (
+                <div className="bg-[#0E1015] border border-[#1E232E] rounded-md overflow-hidden">
+                  <div className="px-6 py-4 border-b border-[#1E232E] bg-[#0A0B0D] flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <span className="text-[#A78BFA]" aria-hidden>⬡</span>
+                      <h3 className="text-xs font-mono text-[#E2E8F0] uppercase tracking-wider">ERC-8004 Agent Identity</h3>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1B1630] border border-[#3B2D7A] text-[#A78BFA] uppercase tracking-wide">
+                      Injective Registry
+                    </span>
+                  </div>
+                  <div className="p-6 space-y-5">
+                    {/* Registration status */}
+                    <div className={`p-4 rounded-md flex items-start space-x-3 ${
+                      isRegistered
+                        ? 'bg-[#0F2F21] border border-[#1B5E3C]'
+                        : 'bg-[#1B1630] border border-[#3B2D7A]'
+                    }`}>
+                      <span className={`text-xl mt-0.5 ${isRegistered ? 'text-[#10B981]' : 'text-[#A78BFA]'}`}>
+                        {isRegistered ? '✓' : '?'}
+                      </span>
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-bold text-white">
+                          {isRegistered ? 'Registered ERC-8004 Agent Identity' : 'No ERC-8004 Identity Found'}
+                        </p>
+                        <p className="text-xs font-mono text-[#94A3B8]">
+                          {isRegistered
+                            ? `Identity NFT confirmed on Injective IdentityRegistry${feedbackCount != null ? ` · ${feedbackCount} reputation feedback record${feedbackCount !== 1 ? 's' : ''}` : ''}.`
+                            : 'This address holds no identity NFT in the Injective ERC-8004 IdentityRegistry.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Profile cross-links */}
+                    <div className="space-y-3">
+                      <div className="text-[10px] font-mono text-[#64748B] uppercase tracking-wide">
+                        Agent address: <span className="text-[#94A3B8] normal-case">{agentAddress}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        <a
+                          href={profileUrls.registryUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center space-x-2 px-4 py-2 rounded text-xs font-mono font-bold bg-[#1B1630] border border-[#3B2D7A] text-[#A78BFA] hover:bg-[#241D48] hover:border-[#7C3AED] transition-all"
+                          id={`injective-registry-link-${agentAddress}`}
+                        >
+                          <span>⬡</span>
+                          <span>agents.injective.com/registry</span>
+                          <span className="text-[#64748B]">↗</span>
+                        </a>
+                        <a
+                          href={profileUrls.scanUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center space-x-2 px-4 py-2 rounded text-xs font-mono font-bold bg-[#0E1015] border border-[#1E232E] text-[#64748B] hover:border-[#3B2D7A] hover:text-[#A78BFA] transition-all"
+                          id={`8004scan-link-${agentAddress}`}
+                        >
+                          <span>8004scan.io</span>
+                          <span>↗</span>
+                        </a>
+                      </div>
+                      <p className="text-[10px] font-mono text-[#475569]">
+                        ArbiSim checks what this agent does next. The registry shows what it already did.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Verdict Evidence Findings */}
             <div className="space-y-4">
               <h3 className="text-sm font-mono text-[#E2E8F0] uppercase tracking-wider">Safety Findings Report</h3>
+
 
               <div className="space-y-4">
                 {data.evidenceReport && data.evidenceReport.length > 0 ? (

@@ -64,8 +64,10 @@ export default function DocsIntroPage() {
       <h2 className="text-xl font-semibold text-text-primary mt-10 mb-4">Supported chains</h2>
       <div className="flex flex-wrap gap-2 mb-8">
         {[
+          { name: 'Injective EVM Testnet', live: true, featured: true },
           { name: 'Avalanche Fuji (testnet)', live: true, featured: true },
           { name: 'Arbitrum Sepolia (testnet)', live: true, featured: false },
+          { name: 'Injective EVM Mainnet', live: false, featured: false },
           { name: 'Avalanche C-Chain', live: false, featured: false },
           { name: 'Arbitrum One', live: false, featured: false },
           { name: 'Base, Polygon, BNB', live: false, featured: false },
@@ -79,7 +81,7 @@ export default function DocsIntroPage() {
           </span>
         ))}
       </div>
-      <p className="text-xs text-text-tertiary mb-8">Avalanche support is funded by the Ava Labs Retro9000 program. <a href="https://retro9000.avax.network" target="_blank" rel="noopener noreferrer" className="text-coral hover:underline">Learn about Retro9000 ↗</a></p>
+      <p className="text-xs text-text-tertiary mb-8">Avalanche support is funded by the Ava Labs Retro9000 program. Injective support is integrated with the canonical ERC-8004 identity registries.</p>
 
       <div className="flex gap-4 mt-10 pt-6 border-t border-border">
         <Link href="/docs/quickstart" className="px-5 py-2.5 bg-coral text-white rounded-lg text-sm font-medium hover:bg-coral/90 transition-colors">

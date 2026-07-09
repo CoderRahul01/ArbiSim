@@ -13,7 +13,7 @@ const CF_WORKER_URL = process.env.NEXT_PUBLIC_CF_WORKER_URL ?? 'https://arbisim-
 const NAV_ITEMS = [
   {
     href: '/dashboard',
-    label: 'Overview',
+    label: 'Home',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
@@ -25,112 +25,32 @@ const NAV_ITEMS = [
   },
   {
     href: '/dashboard/simulate',
-    label: 'Live Sim',
+    label: 'Check an Agent',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <polygon points="3,2 13,8 3,14" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+        <path d="M8 14s6-3 6-7.5V3L8 1 2 3v3.5C2 11 8 14 8 14z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
     badge: 'live',
   },
   {
-    href: '/dashboard/studio',
-    label: 'Payload Sim',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="1" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M5 14h6M8 11v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  {
     href: '/dashboard/agents',
-    label: 'Agent Studio',
+    label: 'My Agents',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <circle cx="8" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
         <path d="M3 13.5c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
       </svg>
     ),
-    badge: 'NEW',
   },
   {
     href: '/dashboard/logs',
-    label: 'Logs',
+    label: 'History',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M2 3h12M2 8h12M2 13h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
       </svg>
     ),
-  },
-  {
-    href: '/dashboard/backtest',
-    label: 'Backtest',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <polyline points="1,12 4,5 7,9 10,3 13,7 15,4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-      </svg>
-    ),
-  },
-  {
-    href: '/dashboard/mcp-playground',
-    label: 'MCP Playground',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M1 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M9 12h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  {
-    href: '/dashboard/api-keys',
-    label: 'API Keys',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="6" cy="6" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M8.5 8.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  {
-    href: '/dashboard/setup',
-    label: 'Setup',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M5.5 8.5L7 10l3.5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  {
-    href: '/dashboard/roadmap',
-    label: 'Roadmap & Grants',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M9 1H4a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V6L9 1z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M9 1v5h5M5 9h6M5 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  {
-    href: '/dashboard/billing',
-    label: 'Billing',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-        <line x1="1" y1="7" x2="15" y2="7" stroke="currentColor" strokeWidth="1.5"/>
-      </svg>
-    ),
-  },
-  {
-    href: '/status',
-    label: 'System Status',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="4" fill="#34d399" className="animate-pulse" />
-      </svg>
-    ),
-    badge: '99.9%',
   },
   {
     href: '/dashboard/settings',
@@ -143,6 +63,8 @@ const NAV_ITEMS = [
     ),
   },
 ];
+
+
 
 interface QuotaStats {
   level: 'warn' | 'critical' | null;

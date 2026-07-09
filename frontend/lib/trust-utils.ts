@@ -61,6 +61,9 @@ export const REGISTRY_ADDRESSES: Record<string, `0x${string}` | ''> = {
   'arbitrum-sepolia': (process.env.NEXT_PUBLIC_SIMULATION_REGISTRY_SEPOLIA || '0x5Dfd08c3d44BEBfa61a24Af8c2EfbDB5A01dFA32') as `0x${string}`,
   'avalanche-fuji': (process.env.NEXT_PUBLIC_AVALANCHE_FUJI_REGISTRY || '0xe940d0f71718F3deaff790d7DC53C775B07E3c54') as `0x${string}`,
   'avalanche-mainnet': (process.env.NEXT_PUBLIC_AVALANCHE_MAINNET_REGISTRY || '') as `0x${string}` | '',
+  // Injective — set NEXT_PUBLIC_INJECTIVE_TESTNET_REGISTRY after DeployInjective.s.sol
+  'injective-testnet': (process.env.NEXT_PUBLIC_INJECTIVE_TESTNET_REGISTRY || '') as `0x${string}` | '',
+  'injective-mainnet': (process.env.NEXT_PUBLIC_INJECTIVE_MAINNET_REGISTRY || '') as `0x${string}` | '',
 };
 
 export const RPC_URLS: Record<string, string> = {
@@ -68,6 +71,8 @@ export const RPC_URLS: Record<string, string> = {
   'arbitrum-sepolia': process.env.NEXT_PUBLIC_ARB_SEPOLIA_RPC || 'https://sepolia-rollup.arbitrum.io/rpc',
   'avalanche-mainnet': process.env.NEXT_PUBLIC_AVALANCHE_MAINNET_RPC || 'https://api.avax.network/ext/bc/C/rpc',
   'avalanche-fuji': process.env.NEXT_PUBLIC_AVALANCHE_FUJI_RPC || 'https://api.avax-test.network/ext/bc/C/rpc',
+  'injective-testnet': process.env.NEXT_PUBLIC_INJECTIVE_TESTNET_RPC || 'https://k8s.testnet.json-rpc.injective.network/',
+  'injective-mainnet': process.env.NEXT_PUBLIC_INJECTIVE_MAINNET_RPC || 'https://sentry.evm-rpc.injective.network/',
 };
 
 export const START_BLOCKS: Record<string, bigint> = {
@@ -75,6 +80,8 @@ export const START_BLOCKS: Record<string, bigint> = {
   'arbitrum-sepolia': BigInt(56000000),
   'avalanche-mainnet': BigInt(53000000),
   'avalanche-fuji': BigInt(32000000),
+  'injective-testnet': BigInt(1),
+  'injective-mainnet': BigInt(1),
 };
 
 export const VIEM_CHAINS: Record<string, any> = {
@@ -108,4 +115,26 @@ export function getCanonicalEvidenceHash(evidenceReport: any[]): string {
   });
   const canonicalStr = JSON.stringify(canonicalList);
   return keccak256(toBytes(canonicalStr));
+}
+
+/**
+ * Returns deep-link URLs to the agent's public ERC-8004 profile on Injective,
+ * or null if the chain is not Injective or the address is zero/empty.
+ *
+ * The narrative: ArbiSim verdict + the agent's actual public reputation record,
+ * side by side — not a claim in a slide, something anyone can click through.
+ */
+export function getInjectiveAgentProfileUrl(
+  agentAddress: string | null | undefined,
+  network: string,
+): { registryUrl: string; scanUrl: string } | null {
+  if (!agentAddress) return null;
+  if (!network.startsWith('injective')) return null;
+  // Exclude zero address
+  if (/^0x0+$/.test(agentAddress)) return null;
+
+  return {
+    registryUrl: `https://agents.injective.com/registry/${agentAddress}`,
+    scanUrl: `https://8004scan.io/${agentAddress}`,
+  };
 }

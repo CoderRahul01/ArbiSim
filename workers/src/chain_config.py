@@ -139,6 +139,83 @@ CHAIN_REGISTRY: dict[str, ChainConfig] = {
         },
     ),
 
+    # ── INJECTIVE ───────────────────────────────────────────────────────────────
+    # Chain family: Injective EVM (CosmosEVM). Native order book (CLOB) via Exchange
+    # Precompile at 0x...0065. MEV resistance via Frequent Batch Auctions (FBA) at the
+    # protocol level — no AMM pools, so known_dex_routers is intentionally empty.
+    # Price oracle: Pyth pull model (feed ID stored here; InjectiveAnalyzer handles the
+    # off-chain fetch + on-chain read pattern with fallback for fork contexts).
+    # ERC-8004: uses the REAL Injective IdentityRegistry + ReputationRegistry, not
+    # the ArbiSim MockERC8004Registry. Addresses are CREATE2-deterministic across EVM chains.
+    "injective-testnet": ChainConfig(
+        chain_id=1439,
+        name="injective-testnet",
+        display_name="Injective EVM Testnet",
+        rpc_url=os.getenv("INJECTIVE_TESTNET_RPC", "https://k8s.testnet.json-rpc.injective.network/"),
+        block_explorer="https://testnet.blockscout.injective.network",
+        native_token="INJ",
+        # Pyth INJ/USD price feed ID (bytes32). Used by InjectiveAnalyzer, not a Chainlink addr.
+        native_token_usd_feed=os.getenv(
+            "INJECTIVE_TESTNET_PYTH_FEED",
+            "0x7a5bc1d2b56ad029048cd63964b3ad2776eadf812edc1a43a31406cb54bff592",
+        ),
+        registry_address=os.getenv("INJECTIVE_TESTNET_REGISTRY"),  # set after DeployInjective.s.sol
+        testnet=True,
+        analyzer_class="InjectiveAnalyzer",
+        registry_version=3,
+        known_dex_routers=[],  # No AMM pools — trades route through Exchange Precompile
+        extra={
+            "timeboost_enabled": False,
+            "stylus_enabled": False,
+            "l1_data_fee": False,
+            "fba_mev_resistant": True,   # Frequent Batch Auctions — protocol-level MEV resistance
+            "exchange_precompile": "0x0000000000000000000000000000000000000065",
+            # Real ERC-8004 IdentityRegistry — CREATE2-deployed, same addr on all EVM chains
+            "erc8004_identity_registry": os.getenv(
+                "INJECTIVE_TESTNET_ERC8004_IDENTITY",
+                "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+            ),
+            # Real ERC-8004 ReputationRegistry
+            "erc8004_reputation_registry": os.getenv(
+                "INJECTIVE_TESTNET_ERC8004_REPUTATION",
+                "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+            ),
+            # Pyth contract on Injective EVM (upgraded address; confirm if integrating mainnet)
+            "pyth_contract": os.getenv(
+                "INJECTIVE_TESTNET_PYTH_CONTRACT",
+                "0x36825bf3Fbdf5a29E2d5148bfe7Dcf7B5639e320",
+            ),
+        },
+    ),
+
+    "injective-mainnet": ChainConfig(
+        chain_id=1776,
+        name="injective-mainnet",
+        display_name="Injective EVM Mainnet",
+        rpc_url=os.getenv("INJECTIVE_MAINNET_RPC", "https://sentry.evm-rpc.injective.network/"),
+        block_explorer="https://blockscout.injective.network",
+        native_token="INJ",
+        native_token_usd_feed=os.getenv(
+            "INJECTIVE_MAINNET_PYTH_FEED",
+            "0x7a5bc1d2b56ad029048cd63964b3ad2776eadf812edc1a43a31406cb54bff592",
+        ),
+        registry_address=os.getenv("INJECTIVE_MAINNET_REGISTRY"),  # deploy before use
+        testnet=False,
+        analyzer_class="InjectiveAnalyzer",
+        registry_version=3,
+        known_dex_routers=[],
+        extra={
+            "timeboost_enabled": False,
+            "stylus_enabled": False,
+            "l1_data_fee": False,
+            "fba_mev_resistant": True,
+            "exchange_precompile": "0x0000000000000000000000000000000000000065",
+            "erc8004_identity_registry": os.getenv("INJECTIVE_MAINNET_ERC8004_IDENTITY"),
+            "erc8004_reputation_registry": os.getenv("INJECTIVE_MAINNET_ERC8004_REPUTATION"),
+            "pyth_contract": os.getenv("INJECTIVE_MAINNET_PYTH_CONTRACT"),
+        },
+    ),
+
     # ── ROBINHOOD ───────────────────────────────────────────────────────────────
     "robinhood-chain-testnet": ChainConfig(
         chain_id=46630,

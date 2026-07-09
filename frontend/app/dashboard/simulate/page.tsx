@@ -213,7 +213,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="border-b border-border bg-surface/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="px-8 h-14 flex items-center justify-between">
-          <span className="text-sm font-medium text-text-primary">Live simulation</span>
+          <span className="text-sm font-medium text-text-primary">Check an Agent</span>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-teal animate-pulse-dot" />
             <span className="text-xs text-text-tertiary font-mono">{activeChain.displayName} fork</span>
@@ -266,7 +266,7 @@ export default function DashboardPage() {
             {/* Avalanche hint */}
             {isAvalanche && (
               <div className="px-4 py-3 rounded-lg border border-orange-600/20 bg-orange-950/15 text-xs text-orange-300/80 font-mono">
-                Avalanche fork: ERC-8004 reputation check + x402 payment safety. No Nitro gas math.
+                Avalanche: checks agent reputation and payment destination safety.
               </div>
             )}
 
@@ -286,7 +286,7 @@ export default function DashboardPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-mono text-text-tertiary uppercase tracking-widest mb-2">Transaction payload (JSON)</label>
+              <label className="block text-xs font-mono text-text-tertiary uppercase tracking-widest mb-2">Transaction to check (JSON)</label>
               <textarea
                 value={payload}
                 onChange={e => setPayload(e.target.value)}
@@ -307,9 +307,9 @@ export default function DashboardPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
                   </svg>
-                  Simulating on {activeChain.displayName}...
+                  Checking safety on {activeChain.displayName}...
                 </>
-              ) : `Run simulation on ${activeChain.displayName}`}
+              ) : `Check safety on ${activeChain.displayName}`}
             </button>
 
             <p className="text-xs text-text-tertiary text-center">
