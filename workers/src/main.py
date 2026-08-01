@@ -8,6 +8,12 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../..', '.env'))
 
+import tracing  # noqa: F401  (side-effect: initializes global TracerProvider)
+from opentelemetry import context as otel_context
+from opentelemetry import trace as otel_trace
+from opentelemetry.propagate import extract
+from opentelemetry.trace import Status, StatusCode
+
 from simulation_engine import AnvilForkInstance
 from analytical_brain import AnalyticalBrain
 from storage import save_telemetry
@@ -21,6 +27,9 @@ from evidence_builder import build_evidence_report, get_canonical_evidence_hash
 _posthog.project_api_key = os.getenv("POSTHOG_API_KEY", "")
 _posthog.host = "https://us.i.posthog.com"
 _posthog.disabled = not _posthog.project_api_key
+
+
+_tracer = otel_trace.get_tracer(__name__)
 
 
 def _track(session_id: str, network: str | None, agent_address: str | None, results: dict) -> None:
@@ -274,11 +283,26 @@ async def process_job(job: dict) -> None:
 
     print(f"\n[{session_id}] Processing on {network} (UserOp: {is_user_op})")
 
+    parent_ctx = extract(payload.get("trace_context") or {})
+    span = _tracer.start_span("worker_process_request", context=parent_ctx)
+    span.set_attribute("arbisim.session_id", session_id)
+    span.set_attribute("arbisim.network", network or "")
+    span.set_attribute("arbisim.is_user_op", is_user_op)
+    span_ctx = otel_trace.set_span_in_context(span, parent_ctx)
+    otel_token = otel_context.attach(span_ctx)
+
     anvil = None
     snapshot_id = None
     try:
-        anvil   = AnvilForkInstance(network)
-        rpc_url = await anvil.start()
+        with _tracer.start_as_current_span("anvil_fork_spawn") as fork_span:
+            anvil   = AnvilForkInstance(network)
+            rpc_url = await anvil.start()
+            fork_span.set_attribute("arbisim.network", network or "")
+            fork_span.set_attribute("arbisim.chain_id", anvil.chain_id)
+            fork_span.set_attribute(
+                "arbisim.pinned_block",
+                str(anvil.block_number) if anvil.block_number is not None else "latest",
+            )
         snapshot_id = await anvil.take_snapshot()
 
         # ERC-4337 UserOp validation via gateway
@@ -302,17 +326,29 @@ async def process_job(job: dict) -> None:
         brain = AnalyticalBrain(rpc_url, chain_config=chain)
         transactions = [] if is_user_op else payload.get("transactions", [])
 
-        # Run simulation in a thread to avoid blocking the event loop
-        results = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: brain.execute_simulation(
-                agent_address=agent_address,
-                transactions=transactions,
-                max_slippage=max_slippage,
-                user_op=user_op if is_user_op else None,
-                entrypoint_version=ep_version
-            )
-        )
+        # Run simulation in a thread to avoid blocking the event loop. Context is
+        # not auto-propagated across run_in_executor threads, so capture and
+        # re-attach it inside the worker thread to keep tx_replay/risk_analysis
+        # spans attached to this trace.
+        replay_ctx = otel_context.get_current()
+
+        def _replay_in_thread():
+            thread_token = otel_context.attach(replay_ctx)
+            try:
+                with _tracer.start_as_current_span("tx_replay") as replay_span:
+                    replay_span.set_attribute("arbisim.tx_count", len(transactions))
+                    replay_span.set_attribute("arbisim.is_user_op", is_user_op)
+                    return brain.execute_simulation(
+                        agent_address=agent_address,
+                        transactions=transactions,
+                        max_slippage=max_slippage,
+                        user_op=user_op if is_user_op else None,
+                        entrypoint_version=ep_version
+                    )
+            finally:
+                otel_context.detach(thread_token)
+
+        results = await asyncio.get_event_loop().run_in_executor(None, _replay_in_thread)
 
         # Persist telemetry to MongoDB (async)
         try:
@@ -353,7 +389,11 @@ async def process_job(job: dict) -> None:
         if onchain_tx:
             await update_simulation_registry_tx(session_id, onchain_tx)
 
+        span.set_status(Status(StatusCode.OK))
+
     except Exception as err:
+        span.record_exception(err)
+        span.set_status(Status(StatusCode.ERROR, str(err)))
         print(f"[{session_id}] Exception: {err}")
         err_telemetry = {
             "status": "REJECTED",
@@ -404,6 +444,8 @@ async def process_job(job: dict) -> None:
             if snapshot_id is not None:
                 await anvil.revert_snapshot(snapshot_id)
             await anvil.stop()
+        span.end()
+        otel_context.detach(otel_token)
 
 
 async def _ping_handler(request: web.Request) -> web.Response:

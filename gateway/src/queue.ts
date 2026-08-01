@@ -1,4 +1,5 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { context, propagation } from '@opentelemetry/api';
 import { createSimulation, enqueueSimulation } from './db.js';
 
 const sqsQueueUrl = process.env.AWS_SQS_QUEUE_URL;
@@ -30,6 +31,7 @@ interface SimulatePayload {
     gasLimit?: string;
   }>;
   max_slippage_tolerance: number;
+  trace_context?: Record<string, string>;
 }
 
 export async function submitSimulationJob(
@@ -41,12 +43,16 @@ export async function submitSimulationJob(
   apiKeyId: string | null = null,
   ownerAddress: string | null = null
 ): Promise<void> {
+  const traceCarrier: Record<string, string> = {};
+  propagation.inject(context.active(), traceCarrier);
+
   const payload: SimulatePayload = {
     session_id: sessionId,
     network,
     agent_address: agentAddress,
     transactions,
     max_slippage_tolerance: maxSlippageTolerance,
+    trace_context: traceCarrier,
   };
 
   // 1. Log simulation record in database (NeonDB/Postgres)

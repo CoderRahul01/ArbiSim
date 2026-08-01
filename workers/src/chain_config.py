@@ -235,7 +235,64 @@ CHAIN_REGISTRY: dict[str, ChainConfig] = {
             "l1_data_fee": True,
         },
     ),
+
+    # ── SOLANA ──────────────────────────────────────────────────────────────────
+    "solana-mainnet": ChainConfig(
+        chain_id=101,  # Solana Mainnet-Beta cluster
+        name="solana-mainnet",
+        display_name="Solana Mainnet",
+        rpc_url=os.getenv("SOLANA_MAINNET_RPC", "https://api.mainnet-beta.solana.com"),
+        block_explorer="https://solscan.io",
+        native_token="SOL",
+        native_token_usd_feed="0xef0d8b0fea96db6e350e41a758b27d566c507b1b",  # Pyth SOL/USD feed ID
+        registry_address=None,
+        testnet=False,
+        analyzer_class="SolanaAnalyzer",
+        known_dex_routers=[
+            "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",  # Raydium AMM V4
+            "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",   # Jupiter V6 Aggregator
+            "whirLbMiicVdio4qvUfM5KAgZ5XPk7878VnMkM5662N",  # Orca Whirlpool
+        ],
+        extra={
+            "is_svm": True,
+            "compute_budget_program": "ComputeBudget111111111111111111111111111111",
+            "pyth_sol_feed": "H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJE6",
+        },
+    ),
+
+    "solana-devnet": ChainConfig(
+        chain_id=103,  # Solana Devnet cluster
+        name="solana-devnet",
+        display_name="Solana Devnet",
+        rpc_url=os.getenv("SOLANA_DEVNET_RPC", "https://api.devnet.solana.com"),
+        block_explorer="https://solscan.io?cluster=devnet",
+        native_token="SOL",
+        native_token_usd_feed="0xef0d8b0fea96db6e350e41a758b27d566c507b1b",
+        registry_address=None,
+        testnet=True,
+        analyzer_class="SolanaAnalyzer",
+        known_dex_routers=[],
+        extra={
+            "is_svm": True,
+            "compute_budget_program": "ComputeBudget111111111111111111111111111111",
+        },
+    ),
 }
+
+
+def register_chain(config: ChainConfig) -> None:
+    """Dynamically register a new chain module at runtime."""
+    CHAIN_REGISTRY[config.name] = config
+
+
+def unregister_chain(network: str) -> Optional[ChainConfig]:
+    """Dynamically remove a chain module at runtime."""
+    return CHAIN_REGISTRY.pop(network, None)
+
+
+def get_active_chains() -> list[str]:
+    """Return all currently active registered network identifiers."""
+    return list(CHAIN_REGISTRY.keys())
 
 
 def get_chain(network: str) -> ChainConfig:
@@ -257,3 +314,4 @@ def list_chains(testnet: bool = None) -> list[str]:
     if testnet is None:
         return list(CHAIN_REGISTRY.keys())
     return [k for k, v in CHAIN_REGISTRY.items() if v.testnet == testnet]
+

@@ -6,9 +6,13 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { getSimulation, getMongoDb, createBacktest, getBacktest } from './db.js';
 import { submitSimulationJob } from './queue.js';
 import { VALID_NETWORKS } from './chain-config.js';
+
+const tracer = trace.getTracer('arbisim-guard-gateway');
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
@@ -169,21 +173,37 @@ export async function callMcpTool(
     if (!network || !agent_address || !transactions || max_slippage_tolerance === undefined) {
       return { error: { code: -32602, message: 'Missing required parameters' } };
     }
-    try {
-      const sessionId = uuidv4();
-      await submitSimulationJob(sessionId, network, agent_address, transactions, max_slippage_tolerance);
-      const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://arbisim-guard.vercel.app';
-      return {
-        result: {
-          session_id: sessionId,
-          status: '202 Accepted',
-          message: 'Simulation queued. Poll get_simulation_status with this session_id.',
-          trust_url: `${SITE_URL}/trust/${sessionId}`,
-        },
-      };
-    } catch (err: any) {
-      return { error: { code: -32603, message: `Failed to queue simulation: ${err.message}` } };
-    }
+    return tracer.startActiveSpan('preflight_simulate', async (span) => {
+      try {
+        const payloadHash = crypto.createHash('sha256').update(JSON.stringify(transactions)).digest('hex');
+        span.setAttributes({
+          'arbisim.agent_address': agent_address,
+          'arbisim.target_chain': network,
+          'arbisim.tx_count': Array.isArray(transactions) ? transactions.length : 0,
+          'arbisim.payload_hash': payloadHash,
+        });
+
+        const sessionId = uuidv4();
+        await submitSimulationJob(sessionId, network, agent_address, transactions, max_slippage_tolerance);
+        span.setAttribute('arbisim.session_id', sessionId);
+        const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://arbisim-guard.vercel.app';
+        span.setStatus({ code: SpanStatusCode.OK });
+        return {
+          result: {
+            session_id: sessionId,
+            status: '202 Accepted',
+            message: 'Simulation queued. Poll get_simulation_status with this session_id.',
+            trust_url: `${SITE_URL}/trust/${sessionId}`,
+          },
+        };
+      } catch (err: any) {
+        span.recordException(err);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+        return { error: { code: -32603, message: `Failed to queue simulation: ${err.message}` } };
+      } finally {
+        span.end();
+      }
+    });
   }
 
   if (name === 'get_simulation_status') {

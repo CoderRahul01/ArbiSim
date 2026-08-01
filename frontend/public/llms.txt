@@ -1,0 +1,70 @@
+# ArbiSim Guard (by Anteratic Labs)
+
+> Multi-chain pre-flight simulation & safety checkpoint for autonomous AI agents across Avalanche, Injective, Solana, and Arbitrum.
+
+## Overview
+ArbiSim Guard is a neutral, non-custodial pre-flight security API and Model Context Protocol (MCP) server built for AI agents, trading bots, and wallet infrastructure. Before an agent executes a transaction payload or ERC-4337 UserOperation on mainnet, ArbiSim Guard dry-runs the payload in an ephemeral, block-accurate fork matching the target chain's head.
+
+The engine returns an instantaneous `APPROVED` or `REJECTED` verdict along with comprehensive telemetry including gas usage, price impact/slippage blowouts, MEV/sandwich attack risk, Stylus WASM ink limits, and estimated net USD P&L.
+
+## Core Capabilities
+- **Multi-Chain Execution**: Block-pinned simulations on Avalanche C-Chain, Injective EVM (CLOB), Solana SVM, and Arbitrum Nitro (Stylus).
+- **ERC-4337 Account Abstraction**: Off-chain UserOperation validation across EntryPoint v0.6 and v0.7.
+- **Oracle Integrations**: Real-time price feed lookups and staleness verification via Chainlink and Pyth pull oracles.
+- **Cryptographic Trust Receipts**: Verified on-chain receipts logged via SimulationRegistry smart contracts.
+- **MCP Server**: Native `@modelcontextprotocol/sdk` integration (`preflight_simulate` tool).
+
+## API Summary
+
+### POST /api/v1/simulate
+Submits a raw transaction payload or UserOperation for pre-flight simulation.
+
+**Request Parameters:**
+- `network` (string, required): Target chain identifier (`avalanche-mainnet` | `injective-mainnet` | `solana-mainnet` | `arbitrum-one` | `avalanche-fuji` | `injective-testnet` | `solana-devnet` | `arbitrum-sepolia`)
+- `from_address` (string, required): Sender or agent wallet address
+- `to_address` (string, required): Recipient contract or DEX router address
+- `value` (string, required): Native token value in wei or lamports ("0" for token interactions)
+- `data` (string, required): Calldata hex string ("0x" for simple transfers)
+
+**Response (202 Accepted / Terminal Receipt):**
+```json
+{
+  "session_id": "sim_9f82a1b7c0",
+  "status": "COMPLETED",
+  "verdict": "APPROVED",
+  "safe_to_execute": true,
+  "telemetry": {
+    "network": "avalanche-mainnet",
+    "gas_used": 142500,
+    "total_fee_usd": 0.042,
+    "net_pnl_usd": 12.50,
+    "slippage_percentage": 0.12,
+    "mev_risk_score": 0.05,
+    "flags": []
+  }
+}
+```
+
+## Model Context Protocol (MCP)
+For LLM agent frameworks (Eliza, Vibekit, LangGraph, Claude Desktop):
+
+```json
+{
+  "mcpServers": {
+    "arbisim-guard": {
+      "type": "sse",
+      "url": "https://arbisimguard.com/mcp/sse?api_key=YOUR_API_KEY"
+    }
+  }
+}
+```
+
+Tool Name: `preflight_simulate`
+Description: Intercepts agent transaction proposals and returns an immediate APPROVED/REJECTED verdict before on-chain broadcast.
+
+## Key Links
+- Main Website: https://arbisimguard.com
+- Documentation: https://arbisimguard.com/docs
+- Interactive Sandbox: https://arbisimguard.com/dashboard/simulate
+- System Status: https://arbisimguard.com/status
+- Sitemap: https://arbisimguard.com/sitemap.xml

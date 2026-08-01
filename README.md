@@ -1,39 +1,37 @@
-# ArbiSim Guard
+# ArbiSim Guard (by Anteratic Labs)
 
-> Pre-flight simulation layer for AI agents on Arbitrum. Simulate every transaction in an ephemeral fork before it touches mainnet.
+> Multi-chain pre-flight simulation & safety checkpoint for autonomous AI agents across Avalanche, Injective, Solana, and Arbitrum.
 
 **Live demo:** [arbisimguard.vercel.app/dashboard/simulate](https://arbisimguard.vercel.app/dashboard/simulate)
 
+---
+
 ## What is ArbiSim Guard?
 
-ArbiSim Guard is the only pre-flight simulation API built for autonomous AI agents on Arbitrum. Instead of analyzing transactions after they settle (and the money is already gone), ArbiSim Guard simulates them first in a block-accurate, ephemeral Arbitrum fork. Agents catch reverts, slippage blowouts, MEV exposure, and gas surprises while they are still free to fix.
+**ArbiSim Guard** is a neutral, multi-chain pre-flight security API and Model Context Protocol (MCP) server for autonomous AI agents. Before an agent executes an on-chain transaction or ERC-4337 UserOperation, ArbiSim Guard simulates the execution in a block-accurate, ephemeral fork pinned to the target chain's head.
 
-**The problem:** AI agents executing DeFi strategies submit live transactions and hope for the best. Existing tools like Tenderly are built for human developers. Post-execution monitors (VetoVault, Himaya Agent, bond.credit Watchtower) tell you what went wrong after the loss. None of them prevent it.
+Agents receive an immediate **`APPROVED`** or **`REJECTED`** verdict along with structured telemetry (gas, slippage, MEV risk, WASM ink, and net USD P&L) *before* committing real capital or triggering on-chain transactions.
 
-**The solution:** Send a transaction payload or ERC-4337 UserOperation to ArbiSim Guard. We spin up a fresh Arbitrum fork, execute it exactly as the chain would, and return an APPROVED or REJECTED verdict with full telemetry before you send a single wei.
+### Core Product Boundaries
 
-## How It Works
+* **In-Scope**: Ephemeral block simulation, multi-chain trace analysis, risk flag evaluations, net P&L prediction, cryptographic simulation receipts, REST API, and native MCP tool integration (`preflight_simulate`).
+* **Out-of-Scope (Handed Off)**: Agent creation/authoring, wallet custody, and final transaction execution on mainnet.
 
-```
-Agent decides to execute a swap
-  |
-  v
-POST /api/v1/simulate  (or MCP: preflight_simulate)
-  |
-  v
-ArbiSim Guard spins up an ephemeral Anvil fork (block-pinned to current head)
-  |
-  v
-Transaction executes inside the fork using wallet impersonation
-  |
-  v
-Python analytical engine parses traces, gas, slippage, MEV risk
-  |
-  v
-Returns APPROVED or REJECTED with structured telemetry
-```
+---
 
-## Architecture
+## Supported Ecosystems & Chain Architecture
+
+ArbiSim Guard utilizes a pluggable modular analyzer framework under `workers/src/analyzers/`:
+
+| Chain Ecosystem | Supported Networks | Execution Engine | Specialized Telemetry |
+|---|---|---|---|
+| **Avalanche** | C-Chain Mainnet, Fuji Testnet | `AvalancheAnalyzer` | Avalanche Warp Messaging (AWM), Snowman finality checks, TraderJoe / Pangolin DEX router analytics |
+| **Injective** | Injective EVM Mainnet, Testnet | `InjectiveAnalyzer` | Protocol-level Frequent Batch Auction (FBA) MEV resistance, native CLOB Exchange Precompile (`0x...0065`), Pyth pull oracle pricing |
+| **Solana** | Mainnet-Beta, Devnet | `SolanaAnalyzer` | SVM Compute Unit (CU) budget tracking, micro-lamport priority fee modeling, Jito tip-auction MEV protection |
+| **Arbitrum** | Arbitrum One, Sepolia | `ArbitrumAnalyzer` | Nitro Brotli-zero L1 calldata fee math, Stylus WASM ink conversion, Timeboost priority ordering analysis |
+
+---
+
 
 ArbiSim Guard is a 4-tier system: edge gateway, application server, worker daemon, and data stores.
 

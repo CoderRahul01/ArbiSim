@@ -33,18 +33,52 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://arbisim-guard.vercel.app'),
-  title: 'ArbiSim Guard - Pre-Flight Simulation for AI Agents',
+  metadataBase: new URL('https://arbisimguard.com'),
+  title: 'ArbiSim Guard — Multi-Chain Pre-Flight Security Layer for AI Agents',
   description:
-    'Test DeFi transactions in an isolated Arbitrum fork before executing with real capital. Catch reverts, slippage, MEV attacks, and stale UserOps before they cost you.',
+    'Simulate AI agent transactions in block-accurate ephemeral forks across Avalanche, Injective, Solana, and Arbitrum. Catch reverts, MEV attacks, slippage blowouts, and WASM ink limits before committing real capital.',
+  keywords: [
+    'AI Agents',
+    'Pre-flight simulation',
+    'DeFi Security',
+    'Avalanche',
+    'Injective',
+    'Solana',
+    'Arbitrum',
+    'Stylus WASM',
+    'ERC-4337 Account Abstraction',
+    'MEV Protection',
+    'MCP Server',
+    'Anteratic Labs',
+  ],
+  authors: [{ name: 'Anteratic Labs', url: 'https://arbisimguard.com' }],
+  creator: 'Anteratic Labs',
+  publisher: 'Anteratic Labs',
   openGraph: {
-    title: 'ArbiSim Guard',
-    description: 'Pre-flight simulation API for AI agents on Arbitrum.',
-    url: 'https://arbisim-guard.vercel.app',
-    siteName: 'ArbiSim Guard',
-    images: [{ url: '/og.png', width: 1200, height: 630 }],
+    title: 'ArbiSim Guard — Multi-Chain Pre-Flight Security Layer for AI Agents',
+    description:
+      'Zero-risk transaction simulation for autonomous AI agents across Avalanche, Injective, Solana, and Arbitrum. Instant APPROVED / REJECTED safety receipts.',
+    url: 'https://arbisimguard.com',
+    siteName: 'ArbiSim Guard (by Anteratic Labs)',
+    images: [
+      {
+        url: '/og.png',
+        width: 1200,
+        height: 630,
+        alt: 'ArbiSim Guard Multi-Chain Pre-Flight Simulation Engine',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
   },
-  twitter: { card: 'summary_large_image' },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'ArbiSim Guard — Multi-Chain Pre-Flight Security for AI Agents',
+    description:
+      'Simulate AI agent payload execution across Avalanche, Injective, Solana, and Arbitrum before touching mainnet.',
+    creator: '@AnteraticLabs',
+    images: ['/og.png'],
+  },
   icons: {
     icon: [
       { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
@@ -53,16 +87,45 @@ export const metadata: Metadata = {
     ],
     apple: '/favicon.png',
   },
+  alternates: {
+    canonical: 'https://arbisimguard.com',
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const initialState = cookieToInitialState(wagmiConfig, (await headers()).get('cookie'));
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'ArbiSim Guard',
+    operatingSystem: 'Multi-Chain (Avalanche, Injective, Solana, Arbitrum)',
+    applicationCategory: 'SecurityApplication',
+    offers: {
+      '@type': 'Offer',
+      price: '0.00',
+      priceCurrency: 'USD',
+    },
+    author: {
+      '@type': 'Organization',
+      name: 'Anteratic Labs',
+      url: 'https://arbisimguard.com',
+    },
+    description:
+      'Multi-chain pre-flight transaction simulation & security checkpoint for autonomous AI agents.',
+  };
+
   return (
     <html
       lang="en"
       className={`${inter.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body style={{ fontFamily: 'var(--font-sans, system-ui, sans-serif)' }}>
         <Providers initialState={initialState}>{children}</Providers>
         <Analytics />
@@ -70,3 +133,4 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     </html>
   );
 }
+

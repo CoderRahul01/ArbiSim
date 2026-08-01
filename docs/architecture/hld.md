@@ -1,34 +1,30 @@
-# High-Level Design — ArbiSim Guard
+# High-Level Design — ArbiSim Guard (Anteratic Labs)
 
-> **One-sentence description:** ArbiSim Guard is the pre-flight simulation layer for AI agents on Arbitrum. It runs transactions and ERC-4337 UserOps inside an ephemeral, block-accurate Anvil fork before they reach mainnet, returning an APPROVED/REJECTED verdict with full gas, slippage, MEV, and Stylus telemetry.
+> **One-sentence description:** ArbiSim Guard is a neutral, multi-chain pre-flight security layer for AI agents across Avalanche, Injective, Solana, and Arbitrum. It runs transactions and ERC-4337 UserOps inside ephemeral, block-accurate forks before they reach mainnet, returning an APPROVED/REJECTED verdict with full risk telemetry.
 
-This document is the HLD — Context (C4 L1) and Container (C4 L2) — with deployment topology, trust boundaries, and scaling model. The LLD (Component + sequence) is in [`lld.md`](./lld.md).
+This document is the HLD — Context (C4 L1) and Container (C4 L2) — with deployment topology, trust boundaries, and multi-chain scaling model.
 
 ---
 
 ## 1. System Context (C4 L1)
 
-External actors and the systems ArbiSim depends on. One sentence per arrow.
-
 ```mermaid
 flowchart LR
-    Agent["AI Agent Framework<br/>(Circle CLI, OpenClaw, Vibekit, Eliza)"]
-    Dev["Web3 Developer<br/>(human)"]
-    ArbiSim(["ArbiSim Guard"])
-    ArbRPC["Arbitrum & Arc RPC<br/>(Nitro / Arc nodes)"]
-    Chainlink["Chainlink Data Feeds<br/>(ETH/USD, L2 sequencer uptime)"]
-    EP["ERC-4337 EntryPoint<br/>+ Circle Wallets"]
-    Circle["Circle Agent Stack<br/>(x402 Nanopayments, USDC)"]
+    Agent["AI Agent Framework<br/>(Circle CLI, Vibekit, Eliza, LangGraph)"]
+    Dev["Web3 Developer / Protocol"]
+    ArbiSim(["ArbiSim Guard Engine<br/>(Anteratic Labs)"])
+    MultiRPC["Multi-Chain RPC Nodes<br/>(Avalanche, Injective, Solana, Arbitrum)"]
+    Oracles["Multi-Chain Oracles<br/>(Chainlink & Pyth Feeds)"]
+    EP["Account Abstraction & Registries<br/>(EntryPoint v0.6/v0.7, ERC-8004)"]
 
-    Agent -->|MCP / Circle Skill: policy_check| ArbiSim
-    Dev    -->|HTTPS REST or dashboard| ArbiSim
-    Agent  -->|Sub-cent USDC x402 header| ArbiSim
+    Agent -->|MCP / REST API: preflight_simulate| ArbiSim
+    Dev -->|HTTPS REST or dashboard| ArbiSim
 
-    ArbiSim -->|fork + trace + state| ArbRPC
-    ArbiSim -->|oracle + staleness checks| Chainlink
-    ArbiSim -->|simulateValidation, getUserOpHash| EP
-    ArbiSim -->|x402 verification + webhooks| Circle
+    ArbiSim -->|fork + trace + state| MultiRPC
+    ArbiSim -->|oracle + price feeds| Oracles
+    ArbiSim -->|UserOp + identity verification| EP
 ```
+
 
 **External actors**
 - **AI Agent Frameworks & Circle CLI** (Circle Agent Stack, OpenClaw, Vibekit, Eliza) — invoke pre-flight simulation hooks via Circle Skill (`arbisim-guard`) or MCP stdio/HTTP.

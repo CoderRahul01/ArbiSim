@@ -50,12 +50,16 @@ Get your API key at: `arbisimguard.vercel.app/dashboard/api-keys`
 
 ## Supported Networks
 
-| Network             | Chain ID | Use                       |
-| ------------------- | -------- | ------------------------- |
-| `arbitrum-one`      | 42161    | Arbitrum mainnet          |
-| `avalanche-mainnet` | 43114    | Avalanche C-Chain mainnet |
-| `arbitrum-sepolia`  | 421614   | Arbitrum testnet          |
-| `avalanche-fuji`    | 43113    | Avalanche testnet         |
+| Network | Chain ID | Ecosystem / Execution Model |
+| --- | --- | --- |
+| `avalanche-mainnet` | 43114 | Avalanche C-Chain (Mainnet) |
+| `injective-mainnet` | 1776 | Injective EVM & CLOB Exchange Precompile |
+| `solana-mainnet` | 101 | Solana SVM (Mainnet-Beta) |
+| `arbitrum-one` | 42161 | Arbitrum Nitro & Stylus WASM |
+| `avalanche-fuji` | 43113 | Avalanche Fuji Testnet |
+| `injective-testnet` | 1439 | Injective EVM Testnet |
+| `solana-devnet` | 103 | Solana Devnet |
+| `arbitrum-sepolia` | 421614 | Arbitrum Sepolia Testnet |
 
 ## Example Usage
 

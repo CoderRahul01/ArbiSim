@@ -1,9 +1,12 @@
 import os
 from web3 import Web3
 from web3.exceptions import ContractLogicError
+from opentelemetry import trace as otel_trace
 
 from analyzers import ANALYZER_MAP
 from analyzers.avalanche import AvalancheAnalyzer
+
+_tracer = otel_trace.get_tracer(__name__)
 
 # ERC-4337 EntryPoint addresses (same on all EVM chains)
 ENTRYPOINT_V06_ADDRESS = '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
@@ -470,9 +473,27 @@ class AnalyticalBrain:
         }
 
         session_id = "synctest_" + os.urandom(4).hex()
-        return analyze_execution_trace(
-            session_id,
-            trace_data,
-            self.w3.provider.endpoint_uri,
-            chain_config=self.chain_config,
-        )
+        with _tracer.start_as_current_span("risk_analysis") as risk_span:
+            result = analyze_execution_trace(
+                session_id,
+                trace_data,
+                self.w3.provider.endpoint_uri,
+                chain_config=self.chain_config,
+            )
+
+            try:
+                slippage_pct = float(str(result.get("slippage_detected", "0.00%")).rstrip('%'))
+            except (TypeError, ValueError):
+                slippage_pct = 0.0
+            revert_detected = bool(result.get("revert_reason"))
+            # Same thresholds the gateway uses to derive high_slippage/stylus_ink_overflow flags.
+            slippage_detected = slippage_pct > 2
+            gas_anomaly_detected = result.get("stylus_ink_consumed", 0) > 100_000_000
+
+            risk_span.set_attribute("arbisim.slippage_detected", slippage_detected)
+            risk_span.set_attribute("arbisim.slippage_pct", slippage_pct)
+            risk_span.set_attribute("arbisim.revert_detected", revert_detected)
+            risk_span.set_attribute("arbisim.gas_anomaly_detected", gas_anomaly_detected)
+            risk_span.set_attribute("arbisim.stylus_ink_consumed", result.get("stylus_ink_consumed", 0))
+
+        return result
