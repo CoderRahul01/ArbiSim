@@ -239,34 +239,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Sidebar */}
       <aside className="w-full md:w-60 border-r border-border bg-surface shrink-0 flex flex-col md:sticky md:top-0 md:h-screen">
         {/* Logo */}
-        <div className="h-14 flex items-center px-5 border-b border-border shrink-0">
+        <div className="h-16 flex items-center px-5 border-b border-slate-800 shrink-0">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <Image src="/logo.png" alt="ArbiSim Guard" width={24} height={24} className="rounded-md shrink-0 shadow-sm shadow-coral/30" />
-            <span className="font-semibold text-text-primary text-sm">ArbiSim Guard</span>
+            <div className="w-7 h-7 rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 p-0.5 shadow-sm">
+              <div className="w-full h-full bg-[#07090E] rounded-[5px] flex items-center justify-center">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-indigo-400">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              </div>
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-white text-sm tracking-tight group-hover:text-indigo-300 transition-colors">ArbiSim Guard</span>
+              <span className="text-[9px] font-mono text-slate-500">by Anteratic Labs</span>
+            </div>
           </Link>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map(item => {
             const active = isActive(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all duration-150 group ${
                   active
-                    ? 'bg-coral/10 text-coral border border-coral/20'
-                    : 'text-text-secondary hover:text-text-primary hover:bg-elevated border border-transparent'
+                    ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold shadow-inner'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
                 }`}
               >
-                <span className={`shrink-0 ${active ? 'text-coral' : 'text-text-tertiary group-hover:text-text-secondary'}`}>
+                <span className={`shrink-0 ${active ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
                   {item.icon}
                 </span>
                 <span className="flex-1">{item.label}</span>
                 {item.badge === 'live' && (
                   <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal animate-pulse-dot" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   </span>
                 )}
               </Link>
@@ -275,27 +284,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* Bottom section */}
-        <div className="border-t border-border p-3 shrink-0">
-          <div className="px-3 py-2.5 rounded-lg bg-elevated border border-border">
+        <div className="border-t border-slate-800 p-3 shrink-0">
+          <div className="px-3 py-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
             <div className="mb-2.5">
               <appkit-button />
             </div>
-            <div className="w-full bg-border rounded-full h-1.5 mt-2.5">
+            <div className="w-full bg-slate-950 rounded-full h-1.5 mt-2.5 border border-slate-800">
               <div
-                className={`h-1.5 rounded-full transition-all duration-500 ${quotaStats.pct >= 100 ? 'bg-danger' : quotaStats.pct >= 80 ? 'bg-amber' : 'bg-coral'}`}
+                className={`h-1.5 rounded-full transition-all duration-500 ${quotaStats.pct >= 100 ? 'bg-red-500' : quotaStats.pct >= 80 ? 'bg-amber-500' : 'bg-indigo-500'}`}
                 style={{ width: `${Math.min(quotaStats.pct, 100)}%` }}
               />
             </div>
-            <p className="text-xs text-text-tertiary mt-1.5">{quotaStats.used} / {quotaStats.limit} simulations</p>
+            <p className="text-[11px] font-mono text-slate-500 mt-1.5">{quotaStats.used} / {quotaStats.limit} simulations</p>
           </div>
         </div>
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-h-screen overflow-y-auto">
+      <main className="flex-1 flex flex-col min-h-screen bg-[#07090E] overflow-y-auto">
         {children}
       </main>
       </div>
     </div>
   );
 }
+

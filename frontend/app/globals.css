@@ -3,33 +3,33 @@
 @tailwind utilities;
 
 :root {
-  /* Surfaces — warm dark, NOT #000 */
-  --bg-base:       #1A1915;
-  --bg-surface:    #232220;
-  --bg-elevated:   #2B2A27;
-  --bg-surface-2:  #2F2D2A;
-  --bg-border:     rgba(245, 243, 238, 0.10);
+  /* Surfaces — Deep Dark Obsidian (#07090E) matching Landing Page */
+  --bg-base:       #07090E;
+  --bg-surface:    #0F172A;
+  --bg-elevated:   #1E293B;
+  --bg-surface-2:  #182238;
+  --bg-border:     rgba(255, 255, 255, 0.08);
 
-  /* Text — warm off-white, NOT #fff */
-  --text-primary:   #F5F3EE;
-  --text-secondary: rgba(245, 243, 238, 0.66);
-  --text-tertiary:  rgba(245, 243, 238, 0.40);
+  /* Text — Clean Slate Off-White */
+  --text-primary:   #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-tertiary:  #64748B;
 
-  /* Accent — Anthropic coral, used with restraint */
-  --accent-coral:       #D97757;
-  --accent-coral-hover: #E08A6C;
-  --accent-coral-muted: rgba(217, 119, 87, 0.14);
+  /* Accent — Indigo & Purple Theme */
+  --accent-coral:       #6366F1;
+  --accent-coral-hover: #4F46E5;
+  --accent-coral-muted: rgba(99, 102, 241, 0.15);
 
-  /* Supporting — muted, on-brand */
-  --accent-amber: #D4A24C;
-  --accent-teal:  #6BA368;
-  --status-danger:  #C15F3C;
-  --status-success: #6BA368;
+  /* Supporting */
+  --accent-amber: #F59E0B;
+  --accent-teal:  #10B981;
+  --status-danger:  #EF4444;
+  --status-success: #10B981;
 
-  /* Fonts (wired from layout.tsx next/font) */
-  --font-sans:  var(--font-sans,  'Inter', system-ui, sans-serif);
+  /* Fonts */
+  --font-sans:  var(--font-sans, 'Inter', system-ui, sans-serif);
   --font-serif: var(--font-serif, 'ui-serif', Georgia, serif);
-  --font-mono:  var(--font-mono,  'JetBrains Mono', 'Fira Code', monospace);
+  --font-mono:  var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
 
   /* Motion */
   --transition-fast:   150ms cubic-bezier(0.16, 1, 0.3, 1);
