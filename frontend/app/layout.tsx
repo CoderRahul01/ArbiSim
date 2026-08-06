@@ -90,6 +90,10 @@ export const metadata: Metadata = {
   alternates: {
     canonical: 'https://arbisimguard.com',
   },
+  other: {
+    'talentapp:project_verification':
+      '610d84efd1d36871f2faa3266ea501a856d94722dbe52b94c3676da365f44851b5f2f94eb6a0cfa13c2e0519db5ef2c0f14b739e6208bb59bf334dec7be6c704',
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -121,6 +125,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       suppressHydrationWarning
     >
       <head>
+        <meta
+          name="talentapp:project_verification"
+          content="610d84efd1d36871f2faa3266ea501a856d94722dbe52b94c3676da365f44851b5f2f94eb6a0cfa13c2e0519db5ef2c0f14b739e6208bb59bf334dec7be6c704"
+        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
